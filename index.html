@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <title>Watershed Dashboard Builder</title>
+        
+        <!-- OpenLayers CSS -->
+        <link rel="stylesheet" href="resources/ol.css">
+        <link rel="stylesheet" href="resources/fontawesome-all.min.css">
+        <link rel="stylesheet" href="resources/ol-layerswitcher.css">
+        
+        <!-- JSZip for export -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+        
+        <!-- Turf.js for geometry operations -->
+        <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+        
+        <!-- SheetJS for Excel export -->
+        <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+        
+        <!-- Builder CSS -->
+        <link rel="stylesheet" href="css/builder.css">
+        <link rel="stylesheet" href="css/preview.css">
+    </head>
+    <body>
+        <!-- Upload Screen -->
+        <div id="upload-screen">
+            <div class="upload-container">
+                <div class="builder-header">
+                    <h1>Watershed Dashboard Builder</h1>
+                    <p class="subtitle">Create interactive watershed dashboards for external partners</p>
+                </div>
+                
+                <div class="upload-instructions">
+                    <h3>Getting Started</h3>
+                    <p>Upload your GeoJSON files to build a customized watershed dashboard. Streams and Municipalities will be automatically fetched from PA DEP and clipped to your watershed boundary. The exported dashboard will be a self-contained package that can be shared with external partners.</p>
+                </div>
+                
+                <div class="notes-box">
+                    <p class="notes-text">Produced by the Penn State Agriculture and Environment Center | Jackson Bouffard, GIS Technician</p>
+                </div>
+                
+                <div class="upload-section">
+                    <h3>Required Layers</h3>
+                    
+                    <!-- Project Points Upload -->
+                    <div class="file-upload-box" id="projects-upload-box">
+                        <div class="upload-icon"><i class="fas fa-map-marker-alt"></i></div>
+                        <div class="upload-label">
+                            <strong>Project Points</strong>
+                            <span class="upload-hint">Point layer with project locations</span>
+                        </div>
+                        <input type="file" id="projects-file" accept=".geojson,.json" class="file-input">
+                        <label for="projects-file" class="file-label">Choose File</label>
+                        <div class="file-status" id="projects-status"></div>
+                    </div>
+                    
+                    <!-- Watershed Boundary Upload -->
+                    <div class="file-upload-box" id="watershed-upload-box">
+                        <div class="upload-icon"><i class="fas fa-draw-polygon"></i></div>
+                        <div class="upload-label">
+                            <strong>Watershed Boundary</strong>
+                            <span class="upload-hint">Polygon layer with watershed extent</span>
+                        </div>
+                        <input type="file" id="watershed-file" accept=".geojson,.json" class="file-input">
+                        <label for="watershed-file" class="file-label">Choose File</label>
+                        <div class="file-status" id="watershed-status"></div>
+                    </div>
+                    
+                    <!-- Streams - Auto-fetched -->
+                    <div class="file-upload-box" id="streams-upload-box">
+                        <div class="upload-icon"><i class="fas fa-water"></i></div>
+                        <div class="upload-label">
+                            <strong>Stream Layer</strong>
+                            <span class="upload-hint">Auto-fetched from PA DEP and clipped to watershed</span>
+                        </div>
+                        <div class="file-status" id="streams-status">Will be fetched after watershed is uploaded</div>
+                    </div>
+                    
+                    <!-- Municipalities - Auto-fetched -->
+                    <div class="file-upload-box" id="municipalities-upload-box">
+                        <div class="upload-icon"><i class="fas fa-city"></i></div>
+                        <div class="upload-label">
+                            <strong>Municipality Boundaries</strong>
+                            <span class="upload-hint">Auto-fetched from PennDOT and clipped to watershed</span>
+                        </div>
+                        <div class="file-status" id="municipalities-status">Will be fetched after watershed is uploaded</div>
+                    </div>
+                    
+                    <!-- Parcels - User-provided REST service links -->
+                    <div class="file-upload-box parcel-upload-box" id="parcels-upload-box">
+                        <div class="upload-icon"><i class="fas fa-vector-square"></i></div>
+                        <div class="upload-label">
+                            <strong>Parcel Data (Optional)</strong>
+                            <span class="upload-hint">Paste county parcel REST service links (up to 3)</span>
+                        </div>
+                        <div class="parcel-links-container">
+                            <div class="parcel-link-row">
+                                <input type="text" id="parcel-link-1" class="parcel-link-input" placeholder="County parcel REST service URL (e.g., .../FeatureServer/0)">
+                                <button type="button" class="parcel-link-clear" data-target="parcel-link-1" title="Clear"><i class="fas fa-times"></i></button>
+                            </div>
+                            <div class="parcel-link-row">
+                                <input type="text" id="parcel-link-2" class="parcel-link-input" placeholder="Additional county (optional)">
+                                <button type="button" class="parcel-link-clear" data-target="parcel-link-2" title="Clear"><i class="fas fa-times"></i></button>
+                            </div>
+                            <div class="parcel-link-row">
+                                <input type="text" id="parcel-link-3" class="parcel-link-input" placeholder="Additional county (optional)">
+                                <button type="button" class="parcel-link-clear" data-target="parcel-link-3" title="Clear"><i class="fas fa-times"></i></button>
+                            </div>
+                            <button type="button" id="fetch-parcels-btn" class="fetch-parcels-btn" disabled>
+                                <i class="fas fa-download"></i> Fetch Parcels
+                            </button>
+                        </div>
+                        <div class="file-status" id="parcels-status">Enter at least one parcel service URL and upload watershed first</div>
+                    </div>
+                </div>
+                
+                <div class="field-mapping-section" id="field-mapping-section" style="display: none;">
+                    <h3>Project Points Field Mapping</h3>
+                    <p class="mapping-hint">Map your data fields to the dashboard fields. The dashboard will only include these simplified fields:</p>
+                    
+                    <div class="field-mapping-grid">
+                        <div class="field-mapping-row">
+                            <label>Project Type:</label>
+                            <select id="map-project-type" class="field-select"></select>
+                        </div>
+                        <div class="field-mapping-row">
+                            <label>Landowner:</label>
+                            <select id="map-landowner" class="field-select"></select>
+                        </div>
+                        <div class="field-mapping-row">
+                            <label>Address:</label>
+                            <select id="map-address" class="field-select"></select>
+                        </div>
+                        <div class="field-mapping-row">
+                            <label>Project Description:</label>
+                            <select id="map-description" class="field-select"></select>
+                        </div>
+                        <div class="field-mapping-row">
+                            <label>Notes:</label>
+                            <select id="map-notes" class="field-select"></select>
+                        </div>
+                        <div class="field-mapping-row">
+                            <label>Municipality:</label>
+                            <select id="map-municipality" class="field-select"></select>
+                        </div>
+                        <div class="field-mapping-row">
+                            <label>Watershed Name:</label>
+                            <select id="map-watershed-name" class="field-select"></select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="dashboard-config-section" id="dashboard-config-section" style="display: none;">
+                    <h3>Dashboard Configuration</h3>
+                    
+                    <div class="config-row">
+                        <label for="dashboard-title">Dashboard Title:</label>
+                        <input type="text" id="dashboard-title" placeholder="e.g., Little Conestoga Watershed Dashboard" class="config-input">
+                    </div>
+                    
+                    <div class="config-row">
+                        <label for="dashboard-description">Description (optional):</label>
+                        <textarea id="dashboard-description" placeholder="Brief description of this watershed..." class="config-textarea"></textarea>
+                    </div>
+                </div>
+                
+                <div class="action-buttons">
+                    <button id="preview-btn" class="action-btn preview-btn" disabled>
+                        <i class="fas fa-eye"></i> Preview Dashboard
+                    </button>
+                    <button id="clear-btn" class="action-btn clear-btn">
+                        <i class="fas fa-trash-alt"></i> Clear All
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Preview Screen -->
+        <div id="preview-screen" style="display: none;">
+            <div id="map">
+                <div id="popup" class="ol-popup">
+                    <a href="#" id="popup-closer" class="ol-popup-closer"></a>
+                    <div id="popup-content"></div>
+                </div>
+                
+                <!-- Symbology Button -->
+                <div id="symbology-btn">
+                    <div class="control-btn-wrapper">
+                        <button title="Layer Symbology"><i class="fas fa-palette"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Dynamic Map Legend -->
+                <div id="map-legend" class="map-legend hidden">
+                    <div class="map-legend-header">
+                        <span class="map-legend-title">Legend</span>
+                        <button id="map-legend-close" class="map-legend-close">&times;</button>
+                    </div>
+                    <div id="map-legend-content" class="map-legend-content">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Feature Counter -->
+            <div id="feature-counter">
+                <div class="counter-content">
+                    <div class="counter-title">Feature Counter</div>
+                    <div id="project-counter" class="counter-row"></div>
+                    <div class="counter-actions">
+                        <button id="download-data-btn" class="download-btn" title="Download filtered features">
+                            <i class="fas fa-download"></i> Download
+                        </button>
+                        <button id="export-dashboard-btn" class="export-btn" title="Export complete dashboard package">
+                            <i class="fas fa-box"></i> Export
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Symbology Editor Panel -->
+            <div id="symbology-panel" class="symbology-panel hidden">
+                <div class="symbology-panel-header">
+                    <h3><i class="fas fa-palette"></i> Layer Symbology</h3>
+                    <button id="symbology-panel-close" class="symbology-panel-close">&times;</button>
+                </div>
+                <div class="symbology-panel-content">
+                    <!-- Map Legend Toggle -->
+                    <div class="symbology-legend-toggle">
+                        <label>
+                            <input type="checkbox" id="show-map-legend">
+                            <i class="fas fa-list-alt"></i> Show legend on map
+                        </label>
+                    </div>
+                    
+                    <!-- Attribution Toggle -->
+                    <div class="symbology-legend-toggle">
+                        <label>
+                            <input type="checkbox" id="show-attribution" checked>
+                            <i class="fas fa-info-circle"></i> Show attribution on map
+                        </label>
+                    </div>
+                    
+                    <!-- Watershed Boundary -->
+                    <div class="symbology-layer-group">
+                        <div class="symbology-layer-header" data-target="watershed-symbology">
+                            <span class="layer-color-preview" id="watershed-preview"></span>
+                            <span>Watershed Boundary</span>
+                            <span class="collapse-icon">▼</span>
+                        </div>
+                        <div class="symbology-layer-content" id="watershed-symbology">
+                            <div class="symbology-row">
+                                <label>Border Color:</label>
+                                <input type="color" id="watershed-stroke-color" value="#0056b3">
+                            </div>
+                            <div class="symbology-row">
+                                <label>Border Width:</label>
+                                <input type="range" id="watershed-stroke-width" min="1" max="6" value="3">
+                                <span class="range-value">3px</span>
+                            </div>
+                            <div class="symbology-row">
+                                <label>Fill Color:</label>
+                                <input type="color" id="watershed-fill-color" value="#0056b3">
+                                <input type="range" id="watershed-fill-opacity" min="0" max="50" value="10">
+                                <span class="range-value">10%</span>
+                            </div>
+                            <div class="symbology-row">
+                                <label>Line Style:</label>
+                                <select id="watershed-line-dash">
+                                    <option value="solid">Solid</option>
+                                    <option value="dashed">Dashed</option>
+                                    <option value="dotted">Dotted</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Municipalities -->
+                    <div class="symbology-layer-group">
+                        <div class="symbology-layer-header" data-target="municipalities-symbology">
+                            <span class="layer-color-preview" id="municipalities-preview"></span>
+                            <span>Municipalities</span>
+                            <span class="collapse-icon collapsed">▼</span>
+                        </div>
+                        <div class="symbology-layer-content collapsed" id="municipalities-symbology">
+                            <div class="symbology-row">
+                                <label>Border Color:</label>
+                                <input type="color" id="municipalities-stroke-color" value="#666666">
+                            </div>
+                            <div class="symbology-row">
+                                <label>Border Width:</label>
+                                <input type="range" id="municipalities-stroke-width" min="0.5" max="5" step="0.5" value="1.5">
+                                <span class="range-value">1.5px</span>
+                            </div>
+                            <div class="symbology-row">
+                                <label>Fill Color:</label>
+                                <input type="color" id="municipalities-fill-color" value="#c8c8c8">
+                                <input type="range" id="municipalities-fill-opacity" min="0" max="50" value="10">
+                                <span class="range-value">10%</span>
+                            </div>
+                            <div class="symbology-row">
+                                <label>Line Style:</label>
+                                <select id="municipalities-line-dash">
+                                    <option value="solid">Solid</option>
+                                    <option value="dashed" selected>Dashed</option>
+                                    <option value="dotted">Dotted</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Parcels -->
+                    <div class="symbology-layer-group" id="parcels-symbology-group" style="display: none;">
+                        <div class="symbology-layer-header" data-target="parcels-symbology">
+                            <span class="layer-color-preview" id="parcels-preview"></span>
+                            <span>Parcels</span>
+                            <span class="collapse-icon collapsed">▼</span>
+                        </div>
+                        <div class="symbology-layer-content collapsed" id="parcels-symbology">
+                            <div class="symbology-row">
+                                <label>Border Color:</label>
+                                <input type="color" id="parcels-stroke-color" value="#8B4513">
+                            </div>
+                            <div class="symbology-row">
+                                <label>Border Width:</label>
+                                <input type="range" id="parcels-stroke-width" min="0.5" max="5" step="0.5" value="1">
+                                <span class="range-value">1px</span>
+                            </div>
+                            <div class="symbology-row">
+                                <label>Fill Color:</label>
+                                <input type="color" id="parcels-fill-color" value="#DEB887">
+                                <input type="range" id="parcels-fill-opacity" min="0" max="50" value="15">
+                                <span class="range-value">15%</span>
+                            </div>
+                            <div class="symbology-row">
+                                <label>Line Style:</label>
+                                <select id="parcels-line-dash">
+                                    <option value="solid" selected>Solid</option>
+                                    <option value="dashed">Dashed</option>
+                                    <option value="dotted">Dotted</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Streams -->
+                    <div class="symbology-layer-group">
+                        <div class="symbology-layer-header" data-target="streams-symbology">
+                            <span class="layer-color-preview" id="streams-preview"></span>
+                            <span>Streams</span>
+                            <span class="collapse-icon collapsed">▼</span>
+                        </div>
+                        <div class="symbology-layer-content collapsed" id="streams-symbology">
+                            <div class="symbology-row">
+                                <label>Symbol Mode:</label>
+                                <select id="streams-mode">
+                                    <option value="plain" selected>Single Color</option>
+                                    <option value="byField">Color by Field</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Plain color options -->
+                            <div id="streams-plain-options">
+                                <div class="symbology-row">
+                                    <label>Line Color:</label>
+                                    <input type="color" id="streams-stroke-color" value="#5a9fd4">
+                                </div>
+                            </div>
+                            
+                            <!-- Color by field options -->
+                            <div id="streams-byfield-options" style="display: none;">
+                                <div class="symbology-row">
+                                    <label>Color Field:</label>
+                                    <select id="streams-color-field">
+                                        <option value="">Select field...</option>
+                                    </select>
+                                </div>
+                                <div id="streams-color-legend" class="color-legend-container"></div>
+                            </div>
+                            
+                            <div class="symbology-row">
+                                <label>Line Width:</label>
+                                <input type="range" id="streams-stroke-width" min="1" max="5" value="2">
+                                <span class="range-value">2px</span>
+                            </div>
+                            <div class="symbology-row">
+                                <label>Line Style:</label>
+                                <select id="streams-line-dash">
+                                    <option value="solid">Solid</option>
+                                    <option value="dashed">Dashed</option>
+                                    <option value="dotted">Dotted</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Project Points -->
+                    <div class="symbology-layer-group">
+                        <div class="symbology-layer-header" data-target="points-symbology">
+                            <span class="layer-color-preview" id="points-preview"></span>
+                            <span>Project Points</span>
+                            <span class="collapse-icon collapsed">▼</span>
+                        </div>
+                        <div class="symbology-layer-content collapsed" id="points-symbology">
+                            <div class="symbology-row">
+                                <label>Symbol Mode:</label>
+                                <select id="points-mode">
+                                    <option value="plain" selected>Single Color</option>
+                                    <option value="byField">Color by Field</option>
+                                </select>
+                            </div>
+                            <div class="symbology-row points-plain-options">
+                                <label>Point Color:</label>
+                                <input type="color" id="points-plain-color" value="#5a9fd4">
+                            </div>
+                            <div class="symbology-row points-byfield-options" style="display: none;">
+                                <label>Color Field:</label>
+                                <select id="points-color-field">
+                                    <!-- Populated dynamically -->
+                                </select>
+                            </div>
+                            <div class="symbology-row">
+                                <label>Border Color:</label>
+                                <input type="color" id="points-stroke-color" value="#333333">
+                            </div>
+                            <div class="symbology-row">
+                                <label>Border Width:</label>
+                                <input type="range" id="points-stroke-width" min="0.5" max="3" step="0.5" value="1.5">
+                                <span class="range-value">1.5px</span>
+                            </div>
+                            <div class="symbology-row">
+                                <label>Point Size:</label>
+                                <input type="range" id="points-radius" min="4" max="12" value="6">
+                                <span class="range-value">6px</span>
+                            </div>
+                            <div class="points-color-legend" id="points-color-legend" style="display: none;">
+                                <label>Color Legend:</label>
+                                <div class="color-legend-items" id="color-legend-items">
+                                    <!-- Populated dynamically -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Download Modal -->
+            <div id="download-modal" class="modal hidden">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Download Project Points</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Download the currently filtered project points.</p>
+                        <div class="download-config">
+                            <label for="download-filename">File Name:</label>
+                            <input type="text" id="download-filename" class="download-input" value="projects">
+                        </div>
+                        <div class="download-config">
+                            <label for="download-format">Format:</label>
+                            <select id="download-format" class="download-select">
+                                <option value="xlsx">Excel Spreadsheet (.xlsx)</option>
+                                <option value="csv">CSV - Comma Separated Values</option>
+                                <option value="geojson">GeoJSON - Geographic JSON</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="download-cancel-btn" class="modal-btn cancel-btn">Cancel</button>
+                        <button id="download-confirm-btn" class="modal-btn confirm-btn"><i class="fas fa-download"></i> Download</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Filter Sidebar -->
+            <div id="utility-bar" class="utility-bar collapsed">
+                <div class="utility-bar-header">
+                    <button id="clear-all-filters-btn" class="clear-all-filters-btn" title="Reset all filters">
+                        <i class="fas fa-undo"></i> Clear Filters
+                    </button>
+                    <button id="zoom-to-filtered-btn" class="zoom-btn" title="Zoom to filtered features">
+                        <i class="fas fa-search-plus"></i> Zoom
+                    </button>
+                    <button id="reset-extent-btn" class="reset-extent-btn" title="Reset map to default extent">
+                        <i class="fas fa-expand"></i> Reset
+                    </button>
+                </div>
+                
+                <!-- Close button (lip) for sidebar -->
+                <button id="utility-bar-close" class="utility-bar-close" title="Close sidebar">&times;</button>
+                
+                <div class="utility-bar-section" id="utility-bar-filters">
+                    <h3>Project Filters</h3>
+                    
+                    <div class="filter-group">
+                        <label class="collapsible-label" data-target="filter-project-type">
+                            <span>Project Type:</span>
+                            <span class="collapse-icon">▼</span>
+                        </label>
+                        <div class="checkbox-group" id="filter-project-type">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label class="collapsible-label" data-target="filter-municipality">
+                            <span>Municipality:</span>
+                            <span class="collapse-icon collapsed">▼</span>
+                        </label>
+                        <div class="checkbox-group collapsed" id="filter-municipality">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label class="collapsible-label" data-target="filter-watershed">
+                            <span>Watershed:</span>
+                            <span class="collapse-icon collapsed">▼</span>
+                        </label>
+                        <div class="checkbox-group collapsed" id="filter-watershed">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="filter-search">Landowner Search:</label>
+                        <input type="text" id="filter-search" class="filter-input" placeholder="Search by landowner name...">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Sidebar Toggle and Back Button Container -->
+            <div id="sidebar-controls" class="sidebar-controls">
+                <div class="control-btn-wrapper">
+                    <button id="sidebar-toggle-btn" class="utility-bar-toggle" title="Toggle filters"><i class="fas fa-bars"></i></button>
+                </div>
+                <div class="control-btn-wrapper">
+                    <button id="back-btn" class="back-btn" title="Back to upload screen"><i class="fas fa-arrow-left"></i></button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Export Modal -->
+        <div id="export-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Export Dashboard</h3>
+                    <button id="export-modal-close" class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p>Your dashboard package will include:</p>
+                    <ul class="export-list">
+                        <li><i class="fas fa-check"></i> Interactive map with all layers</li>
+                        <li><i class="fas fa-check"></i> Filtering sidebar with search</li>
+                        <li><i class="fas fa-check"></i> Popup information on click</li>
+                        <li><i class="fas fa-check"></i> Feature counter with download</li>
+                        <li><i class="fas fa-check"></i> Measurement tools</li>
+                        <li><i class="fas fa-check"></i> Location search</li>
+                        <li><i class="fas fa-check"></i> All required resources</li>
+                    </ul>
+                    
+                    <div class="export-config">
+                        <label for="export-filename">Package Name:</label>
+                        <input type="text" id="export-filename" class="export-input" value="watershed_dashboard">
+                    </div>
+                    
+                    <div class="export-progress hidden" id="export-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill"></div>
+                        </div>
+                        <div class="progress-text" id="progress-text">Preparing files...</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="export-cancel-btn" class="modal-btn cancel-btn">Cancel</button>
+                    <button id="export-confirm-btn" class="modal-btn confirm-btn"><i class="fas fa-download"></i> Download ZIP</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Scripts -->
+        <script src="resources/proj4.js"></script>
+        <script>proj4.defs('EPSG:3857','+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs');</script>
+        <script src="resources/ol.js"></script>
+        <script src="resources/ol-layerswitcher.js"></script>
+        <script src="resources/functions.js"></script>
+        
+        <!-- Builder Scripts -->
+        <script src="js/builder-core.js"></script>
+        <script src="js/preview-mode.js"></script>
+        <script src="js/export-dashboard.js"></script>
+    </body>
+</html>

@@ -1,0 +1,708 @@
+/* ===========================================
+   Watershed Dashboard Builder - Main Styles
+   =========================================== */
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    margin: 0;
+    padding: 0;
+    font-family: sans-serif;
+    font-size: small;
+    background-color: #f8f9fa;
+    height: 100%;
+    overflow-y: auto;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: sans-serif;
+    font-size: small;
+    background-color: #f8f9fa;
+    min-height: 100%;
+}
+
+/* ===========================================
+   Upload Screen
+   =========================================== */
+
+#upload-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px 20px;
+    background: #f8f9fa;
+}
+
+.upload-container {
+    max-width: 800px;
+    width: 100%;
+    background: white;
+    border-radius: 8px;
+    border: 2px solid #0056b3;
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.15);
+    padding: 30px;
+}
+
+/* Header */
+.builder-header {
+    text-align: center;
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #0056b3;
+}
+
+.builder-header h1 {
+    margin: 0;
+    font-size: 24px;
+    color: #333;
+    font-weight: 600;
+}
+
+.builder-header .subtitle {
+    margin: 8px 0 0;
+    color: #666;
+    font-size: 14px;
+}
+
+/* Instructions */
+.upload-instructions {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.upload-instructions h3 {
+    margin: 0 0 8px;
+    color: #333;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.upload-instructions p {
+    margin: 0;
+    color: #555;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+/* Notes Box */
+.notes-box {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.notes-text {
+    margin: 0;
+    color: #333;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.5;
+}
+
+/* Upload Section */
+.upload-section {
+    margin-bottom: 20px;
+}
+
+.upload-section h3 {
+    margin: 0 0 15px;
+    color: #333;
+    font-size: 16px;
+    font-weight: 600;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #dee2e6;
+}
+
+/* File Upload Box */
+.file-upload-box {
+    display: grid;
+    grid-template-columns: 40px 1fr auto;
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 15px;
+    margin-bottom: 12px;
+    border: 2px dashed #ccc;
+    border-radius: 4px;
+    background: #fafafa;
+    transition: all 0.2s ease;
+}
+
+.file-upload-box:hover {
+    border-color: #0056b3;
+    background: #f0f7ff;
+}
+
+.file-upload-box.loaded {
+    border-color: #28a745;
+    border-style: solid;
+    background: #f0fff4;
+}
+
+.file-upload-box.error {
+    border-color: #dc3545;
+    border-style: solid;
+    background: #fff5f5;
+}
+
+.file-upload-box.loading {
+    border-color: #0056b3;
+    border-style: solid;
+    background: #f0f7ff;
+}
+
+.upload-icon {
+    grid-row: span 2;
+    font-size: 24px;
+    color: #5a9fd4;
+    text-align: center;
+}
+
+.upload-label {
+    display: flex;
+    flex-direction: column;
+}
+
+.upload-label strong {
+    color: #333;
+    font-size: 14px;
+}
+
+.upload-hint {
+    color: #888;
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.file-input {
+    display: none;
+}
+
+.file-label {
+    grid-column: 3;
+    grid-row: span 2;
+    padding: 8px 16px;
+    background: #5a9fd4;
+    color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: background 0.2s ease;
+    border: 1px solid #4a8fc4;
+}
+
+.file-label:hover {
+    background: #4a8fc4;
+}
+
+.file-status {
+    grid-column: 2;
+    font-size: 12px;
+    color: #666;
+}
+
+.file-status.success {
+    color: #28a745;
+}
+
+.file-status.error {
+    color: #dc3545;
+}
+
+.file-status.loading {
+    color: #0056b3;
+}
+
+/* Field Mapping Section */
+.field-mapping-section {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.field-mapping-section h3 {
+    margin: 0 0 8px;
+    color: #856404;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.mapping-hint {
+    margin: 0 0 15px;
+    color: #856404;
+    font-size: 12px;
+}
+
+.field-mapping-grid {
+    display: grid;
+    gap: 10px;
+}
+
+.field-mapping-row {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    align-items: center;
+    gap: 8px;
+}
+
+.field-mapping-row label {
+    font-size: 13px;
+    color: #333;
+    font-weight: 500;
+}
+
+.field-select {
+    padding: 6px 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 13px;
+    background: white;
+    color: #333;
+}
+
+.field-select:focus {
+    outline: none;
+    border-color: #0056b3;
+}
+
+/* Dashboard Config Section */
+.dashboard-config-section {
+    background: #d4edda;
+    border: 1px solid #28a745;
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.dashboard-config-section h3 {
+    margin: 0 0 12px;
+    color: #155724;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.config-row {
+    margin-bottom: 12px;
+}
+
+.config-row:last-child {
+    margin-bottom: 0;
+}
+
+.config-row label {
+    display: block;
+    font-size: 13px;
+    color: #333;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.config-input,
+.config-textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: inherit;
+}
+
+.config-textarea {
+    min-height: 60px;
+    resize: vertical;
+}
+
+.config-input:focus,
+.config-textarea:focus {
+    outline: none;
+    border-color: #0056b3;
+}
+
+/* Action Buttons */
+.action-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    padding-top: 15px;
+    border-top: 1px solid #dee2e6;
+}
+
+.action-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 20px;
+    border: 1px solid;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.preview-btn {
+    background: #5a9fd4;
+    color: white;
+    border-color: #4a8fc4;
+}
+
+.preview-btn:hover:not(:disabled) {
+    background: #4a8fc4;
+}
+
+.preview-btn:disabled {
+    background: #ccc;
+    border-color: #bbb;
+    color: #888;
+    cursor: not-allowed;
+}
+
+.clear-btn {
+    background: #dc3545;
+    color: white;
+    border-color: #c82333;
+}
+
+.clear-btn:hover {
+    background: #c82333;
+}
+
+/* ===========================================
+   Modal Styles
+   =========================================== */
+
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+}
+
+.modal.hidden {
+    display: none;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 8px;
+    border: 2px solid #0056b3;
+    max-width: 450px;
+    width: 90%;
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    background: #5a9fd4;
+    color: white;
+    border-radius: 6px 6px 0 0;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: white;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: white;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+}
+
+.modal-close:hover {
+    opacity: 0.8;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.modal-body p {
+    margin: 0 0 15px;
+    color: #555;
+    font-size: 13px;
+}
+
+.modal-footer {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    padding: 15px 20px;
+    border-top: 1px solid #dee2e6;
+    background: #f8f9fa;
+    border-radius: 0 0 6px 6px;
+}
+
+.modal-btn {
+    padding: 8px 16px;
+    border: 1px solid;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.cancel-btn {
+    background: #6c757d;
+    color: white;
+    border-color: #5a6268;
+}
+
+.cancel-btn:hover {
+    background: #5a6268;
+}
+
+.confirm-btn {
+    background: #5a9fd4;
+    color: white;
+    border-color: #4a8fc4;
+}
+
+.confirm-btn:hover {
+    background: #4a8fc4;
+}
+
+/* Export List */
+.export-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 15px;
+}
+
+.export-list li {
+    padding: 6px 0;
+    color: #333;
+    font-size: 13px;
+}
+
+.export-list li i {
+    color: #28a745;
+    margin-right: 8px;
+}
+
+/* Export/Download Config */
+.export-config,
+.download-config {
+    margin-bottom: 12px;
+}
+
+.export-config label,
+.download-config label {
+    display: block;
+    font-size: 13px;
+    color: #333;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.export-input,
+.download-input,
+.download-select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.export-input:focus,
+.download-input:focus,
+.download-select:focus {
+    outline: none;
+    border-color: #0056b3;
+}
+
+/* Progress Bar */
+.export-progress {
+    margin-top: 15px;
+}
+
+.export-progress.hidden {
+    display: none;
+}
+
+.progress-bar {
+    height: 6px;
+    background: #e9ecef;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #5a9fd4;
+    transition: width 0.3s ease;
+}
+
+.progress-text {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #666;
+    text-align: center;
+}
+
+/* ===========================================
+   Parcel Links Input Section
+   =========================================== */
+
+.parcel-upload-box {
+    grid-template-columns: 40px 1fr;
+    grid-template-rows: auto auto auto;
+}
+
+.parcel-upload-box .upload-icon {
+    grid-row: 1 / 3;
+}
+
+.parcel-links-container {
+    grid-column: 1 / -1;
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.parcel-link-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.parcel-link-input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 12px;
+    transition: border-color 0.2s ease;
+}
+
+.parcel-link-input:focus {
+    outline: none;
+    border-color: #0056b3;
+    box-shadow: 0 0 3px rgba(0, 86, 179, 0.3);
+}
+
+.parcel-link-input::placeholder {
+    color: #999;
+}
+
+.parcel-link-clear {
+    padding: 6px 10px;
+    background: #f0f0f0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #666;
+    transition: all 0.2s ease;
+}
+
+.parcel-link-clear:hover {
+    background: #e0e0e0;
+    color: #333;
+}
+
+.fetch-parcels-btn {
+    margin-top: 5px;
+    padding: 10px 16px;
+    background: #0056b3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.fetch-parcels-btn:hover:not(:disabled) {
+    background: #004494;
+}
+
+.fetch-parcels-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+.fetch-parcels-btn i {
+    font-size: 12px;
+}
+
+/* ===========================================
+   Responsive
+   =========================================== */
+
+@media (max-width: 600px) {
+    .upload-container {
+        padding: 20px;
+    }
+    
+    .builder-header h1 {
+        font-size: 20px;
+    }
+    
+    .file-upload-box {
+        grid-template-columns: 1fr;
+        text-align: center;
+    }
+    
+    .upload-icon {
+        grid-row: 1;
+    }
+    
+    .file-label {
+        grid-column: 1;
+        grid-row: auto;
+        justify-self: center;
+    }
+    
+    .file-status {
+        grid-column: 1;
+    }
+    
+    .field-mapping-row {
+        grid-template-columns: 1fr;
+    }
+    
+    .action-buttons {
+        flex-direction: column;
+    }
+    
+    .action-btn {
+        justify-content: center;
+    }
+}
