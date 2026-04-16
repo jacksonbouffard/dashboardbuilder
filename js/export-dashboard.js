@@ -143,8 +143,18 @@ const ExportDashboard = {
             
             this.updateProgress(50, 'Creating dashboard HTML...');
             
-            // Add main HTML file
-            dashboard.file('index.html', this.generateIndexHTML());
+            // Check if photos are present
+            const hasPhotos = typeof PhotoStore !== 'undefined' && PhotoStore.hasPhotos();
+            
+            // Collect referenced images from visible features (for export filtering)
+            let referencedImages = [];
+            if (hasPhotos) {
+                referencedImages = this.collectReferencedImages();
+                this.updateProgress(55, `Found ${referencedImages.length} photos to include...`);
+            }
+            
+            // Add main HTML file (with photo support flag)
+            dashboard.file('index.html', this.generateIndexHTML(hasPhotos));
             
             this.updateProgress(60, 'Adding CSS files...');
             
@@ -152,19 +162,38 @@ const ExportDashboard = {
             const showAttributionCheckbox = document.getElementById('show-attribution');
             const showAttribution = showAttributionCheckbox ? showAttributionCheckbox.checked : true;
             
-            // Add CSS files
-            css.file('dashboard.css', this.generateDashboardCSS(showAttribution));
+            // Add CSS files (with photo CSS)
+            css.file('dashboard.css', this.generateDashboardCSS(showAttribution, hasPhotos));
             
             this.updateProgress(70, 'Adding JavaScript resources...');
             
-            // Add main JS file
-            resources.file('dashboard.js', this.generateDashboardJS());
+            // Add main JS file (with photo support)
+            resources.file('dashboard.js', this.generateDashboardJS(hasPhotos));
             resources.file('functions.js', this.getFunctionsJS());
             
-            this.updateProgress(85, 'Fetching external libraries...');
+            // Add images if photos are present
+            if (hasPhotos && referencedImages.length > 0) {
+                this.updateProgress(75, 'Adding images...');
+                const images = dashboard.folder('images');
+                
+                let addedCount = 0;
+                for (const imagePath of referencedImages) {
+                    const blob = PhotoStore.getBlob(imagePath);
+                    if (blob) {
+                        // Extract just the filename from the path (e.g., "images/142_1.jpg" -> "142_1.jpg")
+                        const filename = imagePath.split('/').pop();
+                        images.file(filename, blob);
+                        addedCount++;
+                    }
+                }
+                
+                this.updateProgress(85, `Added ${addedCount} images...`);
+            } else {
+                this.updateProgress(85, 'Fetching external libraries...');
+            }
             
             // Add README
-            dashboard.file('README.txt', this.generateReadme());
+            dashboard.file('README.txt', this.generateReadme(hasPhotos));
             
             this.updateProgress(95, 'Creating ZIP file...');
             
@@ -182,7 +211,10 @@ const ExportDashboard = {
             
             setTimeout(() => {
                 this.hideModal();
-                alert('Dashboard exported successfully! Extract the ZIP and open index.html in a browser.');
+                const photoMsg = hasPhotos && referencedImages.length > 0 
+                    ? ` Includes ${referencedImages.length} photos.` 
+                    : '';
+                alert(`Dashboard exported successfully!${photoMsg} Extract the ZIP and open index.html in a browser.`);
             }, 500);
             
         } catch (error) {
@@ -190,6 +222,41 @@ const ExportDashboard = {
             alert('Error exporting dashboard: ' + error.message);
             this.hideProgress();
         }
+    },
+    
+    /**
+     * Collect image paths that are referenced by visible (non-filtered) features
+     * Used for export filtering - only include images actually used
+     */
+    collectReferencedImages: function() {
+        const referencedPaths = new Set();
+        
+        if (!BuilderState.projectsData || !BuilderState.projectsData.features) {
+            return [];
+        }
+        
+        // Check each feature in project data
+        for (const feature of BuilderState.projectsData.features) {
+            // Skip hidden/filtered features (check for _hidden flag if present)
+            // Note: During export, we use the raw data which doesn't have _hidden,
+            // but the features in the layer might. For now, include all features.
+            
+            const props = feature.properties;
+            // Check for both lowercase and capitalized photos property
+            if (!props || (!props.photos && !props.Photos)) continue;
+            
+            // Parse the photos property
+            const photoPaths = PhotoStore.parsePhotosProperty(props);
+            
+            // Add each path that exists in the PhotoStore
+            for (const path of photoPaths) {
+                if (PhotoStore.getBlob(path)) {
+                    referencedPaths.add(path);
+                }
+            }
+        }
+        
+        return Array.from(referencedPaths);
     },
     
     /**
@@ -661,8 +728,9 @@ var style_parcels = new ol.style.Style({
     
     /**
      * Generate main index.html
+     * @param {boolean} hasPhotos - Whether photos are included in the export
      */
-    generateIndexHTML: function() {
+    generateIndexHTML: function(hasPhotos = false) {
         const title = BuilderState.dashboardConfig.title || 'Watershed Dashboard';
         const description = BuilderState.dashboardConfig.description || '';
         const hasMunicipalities = BuilderState.municipalityData && BuilderState.municipalityData.features.length > 0;
@@ -679,6 +747,9 @@ var style_parcels = new ol.style.Style({
         const hasWatershedField = BuilderState.fieldMappings && 
                                    BuilderState.fieldMappings.Watershed_Name && 
                                    BuilderState.fieldMappings.Watershed_Name !== '';
+        const hasPriorityField = BuilderState.fieldMappings && 
+                                  BuilderState.fieldMappings.Priority && 
+                                  BuilderState.fieldMappings.Priority !== '';
         
         // Build municipality script tags conditionally
         const municipalityLayerScript = hasMunicipalities ? '<script src="layers/municipalities.js"></script>\n        ' : '';
@@ -711,6 +782,29 @@ var style_parcels = new ol.style.Style({
                     </div>
                 </div>` : '';
         
+        const priorityFilterHTML = hasPriorityField ? `
+                <div class="filter-group" id="priority-filter-group">
+                    <label class="collapsible-label" data-target="filter-priority">
+                        <span>Priority:</span>
+                        <span class="collapse-icon collapsed">▼</span>
+                    </label>
+                    <div class="checkbox-group collapsed" id="filter-priority">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>` : '';
+        
+        // Build Has Photos filter HTML conditionally
+        const hasPhotosFilterHTML = hasPhotos ? `
+                <div class="filter-group filter-toggle-group" id="filter-has-photos-group">
+                    <label class="toggle-label">
+                        <span>Has Photos:</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="filter-has-photos">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </label>
+                </div>` : '';
+        
         // Build attribution HTML conditionally
         const attributionHTML = showAttribution ? `
         <!-- Attribution Box -->
@@ -720,6 +814,18 @@ var style_parcels = new ol.style.Style({
             </button>
             <p class="attribution-text">Produced by the Penn State Agriculture and Environment Center | Jackson Bouffard, GIS Technician</p>
         </div>` : '';
+        
+        // Build lightbox HTML conditionally (for photos)
+        const lightboxHTML = hasPhotos ? `
+            
+            <!-- Photo Lightbox -->
+            <div id="photo-lightbox" class="photo-lightbox hidden">
+                <div class="lightbox-overlay"></div>
+                <div class="lightbox-content">
+                    <button class="lightbox-close" title="Close">&times;</button>
+                    <img id="lightbox-image" src="" alt="Full size photo">
+                </div>
+            </div>` : '';
         
         return `<!doctype html>
 <html lang="en">
@@ -752,7 +858,7 @@ var style_parcels = new ol.style.Style({
                 <a href="#" id="popup-closer" class="ol-popup-closer"></a>
                 <div id="popup-content"></div>
             </div>
-            
+            ${lightboxHTML}
             <!-- Dynamic Map Legend -->
             <div id="map-legend" class="map-legend hidden">
                 <div class="map-legend-header">
@@ -837,12 +943,16 @@ var style_parcels = new ol.style.Style({
                         <!-- Populated dynamically -->
                     </div>
                 </div>
-                ${municipalityFilterHTML}${watershedFilterHTML}
+                ${municipalityFilterHTML}${watershedFilterHTML}${priorityFilterHTML}
+                <div class="filter-group">
+                    <label for="filter-id-search">ID Search:</label>
+                    <input type="text" id="filter-id-search" class="filter-input" placeholder="Search by ID...">
+                </div>
                 <div class="filter-group landowner-search-container">
                     <label for="filter-search">Landowner Search:</label>
                     <input type="text" id="filter-search" class="filter-input" placeholder="Search by landowner name...">
                     <div id="landowner-search-results" class="landowner-search-results"></div>
-                </div>
+                </div>${hasPhotosFilterHTML}
             </div>
         </div>
         
@@ -888,10 +998,12 @@ var style_parcels = new ol.style.Style({
     
     /**
      * Generate dashboard CSS
+     * @param {boolean} showAttribution - Whether to show attribution
+     * @param {boolean} hasPhotos - Whether photos are included
      */
-    generateDashboardCSS: function(showAttribution = true) {
+    generateDashboardCSS: function(showAttribution = true, hasPhotos = false) {
         const featureCounterBottom = showAttribution ? '50px' : '15px';
-        return `/* ===========================================
+        let css = `/* ===========================================
    Watershed Dashboard Styles
    =========================================== */
 
@@ -2064,6 +2176,229 @@ li.layer-switcher-base-group > label {
     }
 }
 `;
+
+        // Add photo CSS if photos are included
+        if (hasPhotos) {
+            css += `
+/* ===========================================
+   Photo Gallery Styles
+   =========================================== */
+
+.popup-photos {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #ddd;
+}
+
+.popup-photo-single {
+    text-align: center;
+}
+
+.popup-photo-img {
+    max-width: 250px;
+    max-height: 200px;
+    object-fit: cover;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+    border: 1px solid #ddd;
+}
+
+.popup-photo-img:hover {
+    opacity: 0.85;
+}
+
+.popup-photo-carousel {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.carousel-container {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    min-height: 150px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.carousel-slide {
+    display: none;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+}
+
+.carousel-slide.active {
+    display: flex;
+}
+
+.carousel-nav {
+    background: #0056b3;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: bold;
+    transition: background 0.2s ease;
+    flex-shrink: 0;
+}
+
+.carousel-nav:hover {
+    background: #004494;
+}
+
+.carousel-counter {
+    text-align: center;
+    font-size: 11px;
+    color: #666;
+    margin-top: 6px;
+    position: absolute;
+    bottom: -20px;
+    left: 0;
+    right: 0;
+}
+
+/* ===========================================
+   Toggle Switch for Has Photos Filter
+   =========================================== */
+
+.filter-toggle-group {
+    padding-top: 10px;
+    border-top: 1px solid #ddd;
+    margin-top: 10px;
+}
+
+.toggle-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+    font-size: 15px;
+    color: #222;
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 46px;
+    height: 24px;
+    margin: 0;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.3s;
+    border-radius: 24px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: #0056b3;
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(22px);
+}
+
+.toggle-switch input:focus + .toggle-slider {
+    box-shadow: 0 0 1px #0056b3;
+}
+
+/* ===========================================
+   Photo Lightbox
+   =========================================== */
+
+.photo-lightbox {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.photo-lightbox.hidden {
+    display: none;
+}
+
+.lightbox-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    cursor: pointer;
+}
+
+.lightbox-content {
+    position: relative;
+    max-width: 90vw;
+    max-height: 90vh;
+    z-index: 1;
+}
+
+.lightbox-close {
+    position: absolute;
+    top: -40px;
+    right: 0;
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 32px;
+    cursor: pointer;
+    padding: 5px 10px;
+    line-height: 1;
+    transition: color 0.2s ease;
+}
+
+.lightbox-close:hover {
+    color: #ccc;
+}
+
+#lightbox-image {
+    max-width: 90vw;
+    max-height: 85vh;
+    object-fit: contain;
+    border-radius: 4px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+`;
+        }
+
+        return css;
     },
     
     /**
@@ -2211,8 +2546,9 @@ li.layer-switcher-base-group > label {
     
     /**
      * Generate dashboard.js
+     * @param {boolean} hasPhotos - Whether photos are included
      */
-    generateDashboardJS: function() {
+    generateDashboardJS: function(hasPhotos = false) {
         // Pre-generate legend HTML
         const legendHTMLContent = this.generateLegendHTML().replace(/'/g, "\\'").replace(/\n/g, '');
         const streamsColor = BuilderState.symbology.streams.strokeColor;
@@ -2274,6 +2610,156 @@ function clearParcelHighlight() {
         const parcelHighlightOnClick = hasParcels ? 'highlightParcelAtPoint(feature);' : '';
         const parcelClearOnClose = hasParcels ? 'clearParcelHighlight();' : '';
         
+        // Generate photo functions if photos are included
+        const photoFunctions = hasPhotos ? `
+
+// Parse photos property from feature (handles JSON-stringified arrays)
+function parsePhotosProperty(props) {
+    if (!props) return [];
+    // Check both lowercase and capitalized versions
+    var photosValue = props.photos || props.Photos;
+    
+    if (!photosValue) return [];
+    
+    if (Array.isArray(photosValue)) {
+        return photosValue.filter(function(p) { return typeof p === 'string' && p.length > 0; });
+    }
+    
+    if (photosValue === null || photosValue === '') return [];
+    
+    if (typeof photosValue === 'string') {
+        try {
+            var parsed = JSON.parse(photosValue);
+            if (Array.isArray(parsed)) {
+                return parsed.filter(function(p) { return typeof p === 'string' && p.length > 0; });
+            }
+        } catch (e) {
+            if (photosValue.indexOf('/') !== -1 || photosValue.indexOf('.') !== -1) {
+                return [photosValue];
+            }
+        }
+    }
+    return [];
+}
+
+// Render photos HTML for popup
+function renderPopupPhotos(props) {
+    var photoPaths = parsePhotosProperty(props);
+    if (photoPaths.length === 0) return '';
+    
+    var html = '<div class="popup-photos">';
+    
+    if (photoPaths.length === 1) {
+        // Single photo
+        var imgPath = 'images/' + photoPaths[0].split('/').pop();
+        html += '<div class="popup-photo-single">';
+        html += '<img src="' + imgPath + '" alt="Site photo" class="popup-photo-img" onclick="openLightbox(this.src)">';
+        html += '</div>';
+    } else {
+        // Multiple photos - carousel
+        html += '<div class="popup-photo-carousel">';
+        html += '<button class="carousel-nav carousel-prev" onclick="carouselPrev(this)" aria-label="Previous photo">&#10094;</button>';
+        html += '<div class="carousel-container">';
+        
+        for (var i = 0; i < photoPaths.length; i++) {
+            var imgPath = 'images/' + photoPaths[i].split('/').pop();
+            var activeClass = i === 0 ? ' active' : '';
+            html += '<div class="carousel-slide' + activeClass + '" data-index="' + i + '">';
+            html += '<img src="' + imgPath + '" alt="Site photo ' + (i+1) + '" class="popup-photo-img" onclick="openLightbox(this.src)">';
+            html += '</div>';
+        }
+        
+        html += '</div>';
+        html += '<button class="carousel-nav carousel-next" onclick="carouselNext(this)" aria-label="Next photo">&#10095;</button>';
+        html += '<div class="carousel-counter"><span class="carousel-current">1</span> / ' + photoPaths.length + '</div>';
+        html += '</div>';
+    }
+    
+    html += '</div>';
+    return html;
+}
+
+// Carousel navigation functions
+function carouselPrev(btn) {
+    var carousel = btn.closest('.popup-photo-carousel');
+    if (!carousel) return;
+    var slides = carousel.querySelectorAll('.carousel-slide');
+    var current = carousel.querySelector('.carousel-slide.active');
+    var currentIndex = parseInt(current.getAttribute('data-index'));
+    var newIndex = (currentIndex - 1 + slides.length) % slides.length;
+    
+    slides.forEach(function(slide, i) {
+        slide.classList.toggle('active', i === newIndex);
+    });
+    
+    var counter = carousel.querySelector('.carousel-current');
+    if (counter) counter.textContent = newIndex + 1;
+}
+
+function carouselNext(btn) {
+    var carousel = btn.closest('.popup-photo-carousel');
+    if (!carousel) return;
+    var slides = carousel.querySelectorAll('.carousel-slide');
+    var current = carousel.querySelector('.carousel-slide.active');
+    var currentIndex = parseInt(current.getAttribute('data-index'));
+    var newIndex = (currentIndex + 1) % slides.length;
+    
+    slides.forEach(function(slide, i) {
+        slide.classList.toggle('active', i === newIndex);
+    });
+    
+    var counter = carousel.querySelector('.carousel-current');
+    if (counter) counter.textContent = newIndex + 1;
+}
+
+// Lightbox functions
+function initLightbox() {
+    var lightbox = document.getElementById('photo-lightbox');
+    if (!lightbox) return;
+    
+    var overlay = lightbox.querySelector('.lightbox-overlay');
+    var closeBtn = lightbox.querySelector('.lightbox-close');
+    
+    if (overlay) {
+        overlay.addEventListener('click', closeLightbox);
+    }
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeLightbox);
+    }
+    
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && !lightbox.classList.contains('hidden')) {
+            closeLightbox();
+        }
+    });
+}
+
+function openLightbox(imageUrl) {
+    var lightbox = document.getElementById('photo-lightbox');
+    var img = document.getElementById('lightbox-image');
+    
+    if (lightbox && img) {
+        img.src = imageUrl;
+        lightbox.classList.remove('hidden');
+    }
+}
+
+function closeLightbox() {
+    var lightbox = document.getElementById('photo-lightbox');
+    var img = document.getElementById('lightbox-image');
+    
+    if (lightbox) {
+        lightbox.classList.add('hidden');
+    }
+    if (img) {
+        img.src = '';
+    }
+}
+` : '';
+        
+        const photoInitCall = hasPhotos ? 'initLightbox();' : '';
+        const photoRenderCall = hasPhotos ? 'html += renderPopupPhotos(props);' : '';
+        
         return `/* ===========================================
    Watershed Dashboard - Main Script
    =========================================== */
@@ -2290,7 +2776,10 @@ var activeFilters = {
     projectTypes: [],
     municipalities: [],
     watersheds: [],
-    search: ''
+    priorities: [],
+    search: '',
+    idSearch: '',
+    hasPhotos: false
 };
 
 function initMap() {
@@ -2320,6 +2809,9 @@ function initMap() {
     
     // Initialize popup
     initPopup();
+    
+    // Initialize lightbox (if photos)
+    ${photoInitCall}
     
     // Initialize filters
     initFilters();
@@ -2391,7 +2883,8 @@ function showPopup(feature, coordinate) {
     var props = feature.getProperties();
     var content = document.getElementById('popup-content');
     
-    var html = '<h4>' + (props.Project_Type || 'Project') + '</h4>';
+    var idPart = props.ID ? 'ID: ' + props.ID + ', ' : '';
+    var html = '<h4>' + idPart + (props.Project_Type || 'Project') + '</h4>';
     
     var fields = [
         { key: 'Landowner', label: 'Landowner' },
@@ -2399,7 +2892,8 @@ function showPopup(feature, coordinate) {
         { key: 'Project_Description', label: 'Description' },
         { key: 'Notes', label: 'Notes' },
         { key: 'Municipality', label: 'Municipality' },
-        { key: 'Watershed_Name', label: 'Watershed' }
+        { key: 'Watershed_Name', label: 'Watershed' },
+        { key: 'Priority', label: 'Priority' }
     ];
     
     fields.forEach(function(field) {
@@ -2408,10 +2902,12 @@ function showPopup(feature, coordinate) {
         }
     });
     
+    ${photoRenderCall}
+    
     content.innerHTML = html;
     popup.setPosition(coordinate);
 }
-
+${photoFunctions}
 function initFilters() {
     populateCheckboxGroup('filter-project-type', 'Project_Type');
     if (document.getElementById('filter-municipality')) {
@@ -2420,12 +2916,21 @@ function initFilters() {
     if (document.getElementById('filter-watershed')) {
         populateCheckboxGroup('filter-watershed', 'Watershed_Name');
     }
+    if (document.getElementById('filter-priority')) {
+        populateCheckboxGroup('filter-priority', 'Priority');
+    }
     
     // Setup collapsible labels
     initCollapsibleLabels();
     
     // Initialize landowner search with autocomplete
     initLandownerSearch();
+    
+    // Initialize ID search
+    initIdSearch();
+    
+    // Initialize has photos toggle
+    initHasPhotosToggle();
     
     document.getElementById('clear-all-filters-btn').addEventListener('click', clearFilters);
     document.getElementById('zoom-to-filtered-btn').addEventListener('click', zoomToFiltered);
@@ -2442,6 +2947,31 @@ function initFilters() {
             if (attrBox) attrBox.classList.remove('sidebar-open');
         });
     }
+}
+
+function initHasPhotosToggle() {
+    var toggle = document.getElementById('filter-has-photos');
+    if (!toggle) return;
+    
+    toggle.addEventListener('change', function() {
+        activeFilters.hasPhotos = toggle.checked;
+        applyFilters();
+    });
+}
+
+function initIdSearch() {
+    var searchInput = document.getElementById('filter-id-search');
+    if (!searchInput) return;
+    
+    var debounceTimer;
+    
+    searchInput.addEventListener('input', function(e) {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function() {
+            activeFilters.idSearch = e.target.value.trim().toLowerCase();
+            applyFilters();
+        }, 200);
+    });
 }
 
 function initLandownerSearch() {
@@ -2702,6 +3232,8 @@ function updateFilterFromCheckboxes(groupId, fieldName) {
         activeFilters.municipalities = values;
     } else if (fieldName === 'Watershed_Name') {
         activeFilters.watersheds = values;
+    } else if (fieldName === 'Priority') {
+        activeFilters.priorities = values;
     }
     
     applyFilters();
@@ -2737,6 +3269,14 @@ function applyFilters() {
             }
         }
         
+        // Priority filter (multiple selection)
+        if (visible && activeFilters.priorities && activeFilters.priorities.length > 0) {
+            var featurePriority = feature.get('Priority');
+            if (activeFilters.priorities.indexOf(featurePriority) === -1) {
+                visible = false;
+            }
+        }
+        
         if (visible && activeFilters.search) {
             var searchText = activeFilters.search;
             var landowner = (feature.get('Landowner') || '').toLowerCase();
@@ -2748,6 +3288,35 @@ function applyFilters() {
                 !address.includes(searchText) && 
                 !description.includes(searchText) &&
                 !notes.includes(searchText)) {
+                visible = false;
+            }
+        }
+        
+        // ID search filter (exact match)
+        if (visible && activeFilters.idSearch) {
+            var idValue = String(feature.get('ID') || '').toLowerCase();
+            if (idValue !== activeFilters.idSearch) {
+                visible = false;
+            }
+        }
+        
+        // Has Photos filter
+        if (visible && activeFilters.hasPhotos) {
+            var photos = feature.get('Photos');
+            var hasPhotoContent = false;
+            if (photos) {
+                if (typeof photos === 'string') {
+                    try {
+                        var parsed = JSON.parse(photos);
+                        hasPhotoContent = Array.isArray(parsed) && parsed.length > 0;
+                    } catch (e) {
+                        hasPhotoContent = photos.trim().length > 0;
+                    }
+                } else if (Array.isArray(photos)) {
+                    hasPhotoContent = photos.length > 0;
+                }
+            }
+            if (!hasPhotoContent) {
                 visible = false;
             }
         }
@@ -2764,12 +3333,27 @@ function clearFilters() {
         projectTypes: [],
         municipalities: [],
         watersheds: [],
-        search: ''
+        priorities: [],
+        search: '',
+        idSearch: '',
+        hasPhotos: false
     };
     
     // Reset all checkboxes
     var checkboxes = document.querySelectorAll('.checkbox-group input[type="checkbox"]');
     checkboxes.forEach(function(cb) { cb.checked = false; });
+    
+    // Reset the hasPhotos toggle
+    var hasPhotosToggle = document.getElementById('filter-has-photos');
+    if (hasPhotosToggle) {
+        hasPhotosToggle.checked = false;
+    }
+    
+    // Reset ID search input
+    var idSearchInput = document.getElementById('filter-id-search');
+    if (idSearchInput) {
+        idSearchInput.value = '';
+    }
     
     // Reset search input and hide results
     document.getElementById('filter-search').value = '';
@@ -3104,11 +3688,22 @@ var createTextStyle = function(feature, resolution, labelText, labelFont,
     
     /**
      * Generate README
+     * @param {boolean} hasPhotos - Whether photos are included
      */
-    generateReadme: function() {
+    generateReadme: function(hasPhotos = false) {
         const title = BuilderState.dashboardConfig.title || 'Watershed Dashboard';
         const date = new Date().toLocaleDateString();
         
+        const photoSection = hasPhotos ? `
+
+PHOTOS
+------
+Site photos are included in the images/ folder and displayed
+in project point popups. Click any photo thumbnail to open
+the full-size image in a new tab. If multiple photos are
+available for a project, use the carousel arrows to navigate.
+` : '';
+
         return `${title}
 ${'='.repeat(title.length)}
 
@@ -3167,7 +3762,7 @@ Project points include these standardized fields:
 - Notes
 - Municipality
 - Watershed_Name
-
+${photoSection}
 DATA DOWNLOAD
 -------------
 The Download button allows users to export visible project points

@@ -20,7 +20,10 @@ const PreviewMode = {
         projectTypes: [],
         municipalities: [],
         watersheds: [],
-        search: ''
+        priorities: [],
+        search: '',
+        idSearch: '',
+        hasPhotos: false
     },
     
     /**
@@ -30,6 +33,7 @@ const PreviewMode = {
         this.createMap();
         this.createLayers();
         this.initPopup();
+        this.initLightbox();
         this.initFilters();
         this.initSidebarToggle();
         this.initDownloadButton();
@@ -509,7 +513,8 @@ const PreviewMode = {
         const props = feature.getProperties();
         const content = document.getElementById('popup-content');
         
-        let html = `<h4>${props.Project_Type || 'Project'}</h4>`;
+        const idPart = props.ID ? `ID: ${props.ID}, ` : '';
+        let html = `<h4>${idPart}${props.Project_Type || 'Project'}</h4>`;
         
         const fields = [
             { key: 'Landowner', label: 'Landowner' },
@@ -517,7 +522,8 @@ const PreviewMode = {
             { key: 'Project_Description', label: 'Description' },
             { key: 'Notes', label: 'Notes' },
             { key: 'Municipality', label: 'Municipality' },
-            { key: 'Watershed_Name', label: 'Watershed' }
+            { key: 'Watershed_Name', label: 'Watershed' },
+            { key: 'Priority', label: 'Priority' }
         ];
         
         fields.forEach(field => {
@@ -526,8 +532,111 @@ const PreviewMode = {
             }
         });
         
+        // Add photos if present
+        html += this.renderPopupPhotos(props);
+        
         content.innerHTML = html;
         this.popup.setPosition(coordinate);
+        
+        // Initialize photo carousel if photos exist
+        this.initPhotoCarousel(content);
+    },
+    
+    /**
+     * Render photos section for popup
+     */
+    renderPopupPhotos: function(props) {
+        // Check if PhotoStore is available and has photos
+        if (typeof PhotoStore === 'undefined' || !PhotoStore.hasPhotos()) {
+            return '';
+        }
+        
+        // Get resolved photos for this feature
+        const photos = PhotoStore.resolvePhotos(props);
+        if (photos.length === 0) {
+            return '';
+        }
+        
+        let html = '<div class="popup-photos">';
+        
+        if (photos.length === 1) {
+            // Single photo - just show it
+            html += `<div class="popup-photo-single">
+                <img src="${photos[0].url}" alt="Site photo" class="popup-photo-img" data-full="${photos[0].url}">
+            </div>`;
+        } else {
+            // Multiple photos - show carousel
+            html += '<div class="popup-photo-carousel">';
+            html += '<button class="carousel-nav carousel-prev" aria-label="Previous photo">&#10094;</button>';
+            html += '<div class="carousel-container">';
+            
+            photos.forEach((photo, index) => {
+                const activeClass = index === 0 ? ' active' : '';
+                html += `<div class="carousel-slide${activeClass}" data-index="${index}">
+                    <img src="${photo.url}" alt="Site photo ${index + 1}" class="popup-photo-img" data-full="${photo.url}">
+                </div>`;
+            });
+            
+            html += '</div>';
+            html += '<button class="carousel-nav carousel-next" aria-label="Next photo">&#10095;</button>';
+            html += `<div class="carousel-counter"><span class="carousel-current">1</span> / ${photos.length}</div>`;
+            html += '</div>';
+        }
+        
+        html += '</div>';
+        return html;
+    },
+    
+    /**
+     * Initialize photo carousel click handlers
+     */
+    initPhotoCarousel: function(container) {
+        // Click on image to open in lightbox
+        const images = container.querySelectorAll('.popup-photo-img');
+        images.forEach(img => {
+            img.addEventListener('click', function() {
+                const fullUrl = this.getAttribute('data-full');
+                if (fullUrl) {
+                    PreviewMode.openLightbox(fullUrl);
+                }
+            });
+        });
+        
+        // Carousel navigation
+        const carousel = container.querySelector('.popup-photo-carousel');
+        if (!carousel) return;
+        
+        const slides = carousel.querySelectorAll('.carousel-slide');
+        const prevBtn = carousel.querySelector('.carousel-prev');
+        const nextBtn = carousel.querySelector('.carousel-next');
+        const counter = carousel.querySelector('.carousel-current');
+        let currentIndex = 0;
+        
+        const showSlide = (index) => {
+            slides.forEach((slide, i) => {
+                slide.classList.toggle('active', i === index);
+            });
+            if (counter) {
+                counter.textContent = index + 1;
+            }
+            currentIndex = index;
+        };
+        
+        if (prevBtn) {
+            prevBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const newIndex = (currentIndex - 1 + slides.length) % slides.length;
+                showSlide(newIndex);
+            });
+        }
+        
+        if (nextBtn) {
+            nextBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const newIndex = (currentIndex + 1) % slides.length;
+                showSlide(newIndex);
+            });
+        }
     },
     
     /**
@@ -589,6 +698,62 @@ const PreviewMode = {
     },
     
     /**
+     * Initialize the photo lightbox
+     */
+    initLightbox: function() {
+        const lightbox = document.getElementById('photo-lightbox');
+        if (!lightbox) return;
+        
+        const overlay = lightbox.querySelector('.lightbox-overlay');
+        const closeBtn = lightbox.querySelector('.lightbox-close');
+        
+        // Close on overlay click
+        if (overlay) {
+            overlay.addEventListener('click', () => this.closeLightbox());
+        }
+        
+        // Close on button click
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => this.closeLightbox());
+        }
+        
+        // Close on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !lightbox.classList.contains('hidden')) {
+                this.closeLightbox();
+            }
+        });
+    },
+    
+    /**
+     * Open the lightbox with an image
+     */
+    openLightbox: function(imageUrl) {
+        const lightbox = document.getElementById('photo-lightbox');
+        const img = document.getElementById('lightbox-image');
+        
+        if (lightbox && img) {
+            img.src = imageUrl;
+            lightbox.classList.remove('hidden');
+        }
+    },
+    
+    /**
+     * Close the lightbox
+     */
+    closeLightbox: function() {
+        const lightbox = document.getElementById('photo-lightbox');
+        const img = document.getElementById('lightbox-image');
+        
+        if (lightbox) {
+            lightbox.classList.add('hidden');
+        }
+        if (img) {
+            img.src = '';
+        }
+    },
+    
+    /**
      * Initialize filters
      */
     initFilters: function() {
@@ -596,6 +761,7 @@ const PreviewMode = {
         this.populateCheckboxGroup('filter-project-type', 'Project_Type');
         this.populateCheckboxGroup('filter-municipality', 'Municipality');
         this.populateCheckboxGroup('filter-watershed', 'Watershed_Name');
+        this.populateCheckboxGroup('filter-priority', 'Priority');
         
         // Hide municipality filter if not mapped
         this.hideUnmappedFilters();
@@ -605,6 +771,12 @@ const PreviewMode = {
         
         // Initialize landowner search with autocomplete
         this.initLandownerSearch();
+        
+        // Initialize ID search
+        this.initIdSearch();
+        
+        // Initialize has photos toggle
+        this.initHasPhotosToggle();
         
         // Clear all filters button
         document.getElementById('clear-all-filters-btn').addEventListener('click', () => {
@@ -628,12 +800,39 @@ const PreviewMode = {
     },
     
     /**
+     * Initialize has photos toggle filter
+     */
+    initHasPhotosToggle: function() {
+        const filterGroup = document.getElementById('filter-has-photos-group');
+        const toggle = document.getElementById('filter-has-photos');
+        
+        if (!filterGroup || !toggle) return;
+        
+        // Show toggle only if Photos field is mapped
+        const photosMapped = BuilderState.fieldMappings && 
+                             BuilderState.fieldMappings.Photos && 
+                             BuilderState.fieldMappings.Photos !== '';
+        
+        if (photosMapped) {
+            filterGroup.style.display = 'block';
+            
+            toggle.addEventListener('change', () => {
+                this.activeFilters.hasPhotos = toggle.checked;
+                this.applyFilters();
+            });
+        } else {
+            filterGroup.style.display = 'none';
+        }
+    },
+    
+    /**
      * Hide filter sections if their corresponding fields are not mapped
      */
     hideUnmappedFilters: function() {
         // Get the filter group elements
         const municipalityGroup = document.querySelector('[data-target="filter-municipality"]');
         const watershedGroup = document.querySelector('[data-target="filter-watershed"]');
+        const priorityGroup = document.querySelector('[data-target="filter-priority"]');
         
         // Check if municipality is mapped
         const municipalityMapped = BuilderState.fieldMappings && 
@@ -644,6 +843,11 @@ const PreviewMode = {
         const watershedMapped = BuilderState.fieldMappings && 
                                 BuilderState.fieldMappings.Watershed_Name && 
                                 BuilderState.fieldMappings.Watershed_Name !== '';
+        
+        // Check if priority is mapped
+        const priorityMapped = BuilderState.fieldMappings && 
+                               BuilderState.fieldMappings.Priority && 
+                               BuilderState.fieldMappings.Priority !== '';
         
         // Hide municipality filter if not mapped
         if (municipalityGroup && !municipalityMapped) {
@@ -656,6 +860,14 @@ const PreviewMode = {
         // Hide watershed filter if not mapped
         if (watershedGroup && !watershedMapped) {
             const filterGroup = watershedGroup.closest('.filter-group');
+            if (filterGroup) {
+                filterGroup.style.display = 'none';
+            }
+        }
+        
+        // Hide priority filter if not mapped
+        if (priorityGroup && !priorityMapped) {
+            const filterGroup = priorityGroup.closest('.filter-group');
             if (filterGroup) {
                 filterGroup.style.display = 'none';
             }
@@ -720,6 +932,33 @@ const PreviewMode = {
             if (searchInput.value.trim().length >= 2 && resultsDiv.innerHTML) {
                 resultsDiv.classList.add('visible');
             }
+        });
+    },
+    
+    /**
+     * Initialize ID search input
+     */
+    initIdSearch: function() {
+        const searchInput = document.getElementById('filter-id-search');
+        if (!searchInput) return;
+        
+        // Debounce function
+        let debounceTimer;
+        const debounce = (func, delay) => {
+            return (...args) => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => func.apply(this, args), delay);
+            };
+        };
+        
+        // Search handler - filter by ID
+        const handleSearch = debounce((searchText) => {
+            this.activeFilters.idSearch = searchText.toLowerCase();
+            this.applyFilters();
+        }, 200);
+        
+        searchInput.addEventListener('input', (e) => {
+            handleSearch(e.target.value.trim());
         });
     },
     
@@ -969,6 +1208,8 @@ const PreviewMode = {
             this.activeFilters.municipalities = values;
         } else if (fieldName === 'Watershed_Name') {
             this.activeFilters.watersheds = values;
+        } else if (fieldName === 'Priority') {
+            this.activeFilters.priorities = values;
         }
         
         this.applyFilters();
@@ -1009,6 +1250,14 @@ const PreviewMode = {
                 }
             }
             
+            // Priority filter (multiple selection)
+            if (visible && this.activeFilters.priorities && this.activeFilters.priorities.length > 0) {
+                const featurePriority = feature.get('Priority');
+                if (!this.activeFilters.priorities.includes(featurePriority)) {
+                    visible = false;
+                }
+            }
+            
             // Search filter
             if (visible && this.activeFilters.search) {
                 const searchText = this.activeFilters.search;
@@ -1021,6 +1270,36 @@ const PreviewMode = {
                     !address.includes(searchText) && 
                     !description.includes(searchText) &&
                     !notes.includes(searchText)) {
+                    visible = false;
+                }
+            }
+            
+            // ID search filter (exact match)
+            if (visible && this.activeFilters.idSearch) {
+                const idValue = String(feature.get('ID') || '').toLowerCase();
+                if (idValue !== this.activeFilters.idSearch) {
+                    visible = false;
+                }
+            }
+            
+            // Has Photos filter
+            if (visible && this.activeFilters.hasPhotos) {
+                const photos = feature.get('Photos');
+                // Check if photos field exists and has content
+                let hasPhotoContent = false;
+                if (photos) {
+                    if (typeof photos === 'string') {
+                        try {
+                            const parsed = JSON.parse(photos);
+                            hasPhotoContent = Array.isArray(parsed) && parsed.length > 0;
+                        } catch (e) {
+                            hasPhotoContent = photos.trim().length > 0;
+                        }
+                    } else if (Array.isArray(photos)) {
+                        hasPhotoContent = photos.length > 0;
+                    }
+                }
+                if (!hasPhotoContent) {
                     visible = false;
                 }
             }
@@ -1041,12 +1320,27 @@ const PreviewMode = {
             projectTypes: [],
             municipalities: [],
             watersheds: [],
-            search: ''
+            priorities: [],
+            search: '',
+            idSearch: '',
+            hasPhotos: false
         };
         
         // Reset all checkboxes
         const checkboxes = document.querySelectorAll('.checkbox-group input[type="checkbox"]');
         checkboxes.forEach(cb => cb.checked = false);
+        
+        // Reset the hasPhotos toggle
+        const hasPhotosToggle = document.getElementById('filter-has-photos');
+        if (hasPhotosToggle) {
+            hasPhotosToggle.checked = false;
+        }
+        
+        // Reset ID search
+        const idSearchInput = document.getElementById('filter-id-search');
+        if (idSearchInput) {
+            idSearchInput.value = '';
+        }
         
         // Reset search and hide autocomplete results
         document.getElementById('filter-search').value = '';

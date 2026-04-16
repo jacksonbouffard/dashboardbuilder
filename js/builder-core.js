@@ -18,13 +18,16 @@ const BuilderState = {
     
     // Field mappings
     fieldMappings: {
+        ID: '',
         Project_Type: '',
         Landowner: '',
         Address: '',
         Project_Description: '',
         Notes: '',
         Municipality: '',
-        Watershed_Name: ''
+        Watershed_Name: '',
+        Photos: '',
+        Priority: ''
     },
     
     // Dashboard configuration
@@ -85,13 +88,16 @@ const BuilderState = {
         this.parcelLinks = [];
         this.availableFields = [];
         this.fieldMappings = {
+            ID: '',
             Project_Type: '',
             Landowner: '',
             Address: '',
             Project_Description: '',
             Notes: '',
             Municipality: '',
-            Watershed_Name: ''
+            Watershed_Name: '',
+            Photos: '',
+            Priority: ''
         };
         this.dashboardConfig = {
             title: 'Watershed Dashboard',
@@ -159,13 +165,29 @@ document.addEventListener('DOMContentLoaded', function() {
  * Initialize file upload handlers
  */
 function initFileUploadHandlers() {
-    // Projects file
+    // Projects file - supports both GeoJSON and ZIP (with photos)
     document.getElementById('projects-file').addEventListener('change', function(e) {
-        handleFileUpload(e.target.files[0], 'projects', function(data) {
-            BuilderState.projectsData = data;
-            updateFieldMappingOptions(data);
-            showFieldMappingSection();
-        });
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        // Check if it's a ZIP file
+        const isZip = file.name.toLowerCase().endsWith('.zip') || 
+                      file.type === 'application/zip' || 
+                      file.type === 'application/x-zip-compressed';
+        
+        if (isZip) {
+            handleProjectsZipUpload(file, function(data) {
+                BuilderState.projectsData = data;
+                updateFieldMappingOptions(data);
+                showFieldMappingSection();
+            });
+        } else {
+            handleFileUpload(file, 'projects', function(data) {
+                BuilderState.projectsData = data;
+                updateFieldMappingOptions(data);
+                showFieldMappingSection();
+            });
+        }
     });
     
     // Watershed file - also triggers stream and municipality fetching
@@ -240,6 +262,105 @@ function handleFileUpload(file, type, onSuccess) {
 }
 
 /**
+ * Handle ZIP file upload for projects (with photos)
+ * Expects: points.geojson and optional images/ folder
+ */
+async function handleProjectsZipUpload(file, onSuccess) {
+    const uploadBox = document.getElementById('projects-upload-box');
+    const statusEl = document.getElementById('projects-status');
+    
+    // Reset status
+    uploadBox.classList.remove('loaded', 'error', 'loading');
+    uploadBox.classList.add('loading');
+    statusEl.className = 'file-status loading';
+    statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Unpacking ZIP...';
+    
+    try {
+        // Read the ZIP file
+        const arrayBuffer = await file.arrayBuffer();
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        
+        // Find the GeoJSON file (look for points.geojson or any .geojson)
+        let geojsonFile = null;
+        let geojsonPath = null;
+        
+        // First try points.geojson
+        for (const path of Object.keys(zip.files)) {
+            const lowerPath = path.toLowerCase();
+            if (lowerPath === 'points.geojson' || lowerPath.endsWith('/points.geojson')) {
+                geojsonFile = zip.files[path];
+                geojsonPath = path;
+                break;
+            }
+        }
+        
+        // Fall back to any .geojson file
+        if (!geojsonFile) {
+            for (const path of Object.keys(zip.files)) {
+                if (path.toLowerCase().endsWith('.geojson') && !zip.files[path].dir) {
+                    geojsonFile = zip.files[path];
+                    geojsonPath = path;
+                    break;
+                }
+            }
+        }
+        
+        if (!geojsonFile) {
+            throw new Error('No GeoJSON file found in ZIP (expected points.geojson)');
+        }
+        
+        statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading GeoJSON...';
+        
+        // Read and parse the GeoJSON
+        const geojsonContent = await geojsonFile.async('string');
+        const data = JSON.parse(geojsonContent);
+        
+        // Validate GeoJSON
+        if (!isValidGeoJSON(data, 'projects')) {
+            throw new Error('Invalid GeoJSON format for projects');
+        }
+        
+        // Load photos into PhotoStore
+        statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading photos...';
+        
+        if (typeof PhotoStore !== 'undefined') {
+            const photoCount = await PhotoStore.load(zip);
+            
+            // Update status with photo count
+            uploadBox.classList.remove('loading');
+            uploadBox.classList.add('loaded');
+            statusEl.className = 'file-status success';
+            
+            if (photoCount > 0) {
+                statusEl.innerHTML = `<i class="fas fa-check"></i> Loaded ${data.features.length} features + ${photoCount} photos`;
+            } else {
+                statusEl.innerHTML = `<i class="fas fa-check"></i> Loaded ${data.features.length} features (no photos)`;
+            }
+        } else {
+            // PhotoStore not available, proceed without photos
+            uploadBox.classList.remove('loading');
+            uploadBox.classList.add('loaded');
+            statusEl.className = 'file-status success';
+            statusEl.innerHTML = `<i class="fas fa-check"></i> Loaded ${data.features.length} features`;
+            console.warn('PhotoStore not available - photo support disabled');
+        }
+        
+        // Callback with data
+        if (onSuccess) onSuccess(data);
+        
+        // Check if all files are loaded
+        checkAllFilesLoaded();
+        
+    } catch (error) {
+        uploadBox.classList.remove('loading');
+        uploadBox.classList.add('error');
+        statusEl.className = 'file-status error';
+        statusEl.innerHTML = `<i class="fas fa-times"></i> Error: ${error.message}`;
+        console.error('ZIP upload error:', error);
+    }
+}
+
+/**
  * Validate GeoJSON structure
  */
 function isValidGeoJSON(data, type) {
@@ -296,13 +417,16 @@ function updateFieldMappingOptions(data) {
     
     // Populate dropdowns
     const mappingFields = [
+        { id: 'map-id', target: 'ID', hints: ['id', 'objectid', 'fid', 'project_id', 'uid', 'identifier'] },
         { id: 'map-project-type', target: 'Project_Type', hints: ['project_type', 'type', 'bmp_type', 'project_types'] },
         { id: 'map-landowner', target: 'Landowner', hints: ['landowner', 'owner', 'landowner_parcel'] },
         { id: 'map-address', target: 'Address', hints: ['address', 'address_parcel', 'location'] },
         { id: 'map-description', target: 'Project_Description', hints: ['project_description', 'description', 'desc'] },
         { id: 'map-notes', target: 'Notes', hints: ['notes', 'note', 'comments', 'other'] },
         { id: 'map-municipality', target: 'Municipality', hints: ['municipality', 'muni', 'town', 'township'] },
-        { id: 'map-watershed-name', target: 'Watershed_Name', hints: ['watershed_name', 'watershed', 'huc12_name', 'name'] }
+        { id: 'map-watershed-name', target: 'Watershed_Name', hints: ['watershed_name', 'watershed', 'huc12_name', 'name'] },
+        { id: 'map-photos', target: 'Photos', hints: ['photos', 'photo', 'images', 'image', 'attachments'] },
+        { id: 'map-priority', target: 'Priority', hints: ['priority', 'rank', 'importance', 'level'] }
     ];
     
     mappingFields.forEach(mapping => {
@@ -543,6 +667,12 @@ function transformProjectData() {
             }
         }
         
+        // Also preserve lowercase 'photos' if present and Photos wasn't explicitly mapped
+        // This ensures backward compatibility with older data
+        if (feature.properties && feature.properties.photos !== undefined && !newProperties.Photos) {
+            newProperties.Photos = feature.properties.photos;
+        }
+        
         return {
             type: 'Feature',
             geometry: feature.geometry,
@@ -563,6 +693,11 @@ function transformProjectData() {
  */
 function clearAllUploads() {
     BuilderState.reset();
+    
+    // Clear PhotoStore if available
+    if (typeof PhotoStore !== 'undefined') {
+        PhotoStore.clear();
+    }
     
     // Reset file inputs
     ['projects-file', 'watershed-file'].forEach(id => {

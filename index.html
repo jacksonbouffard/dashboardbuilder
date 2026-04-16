@@ -52,9 +52,9 @@
                         <div class="upload-icon"><i class="fas fa-map-marker-alt"></i></div>
                         <div class="upload-label">
                             <strong>Project Points</strong>
-                            <span class="upload-hint">Point layer with project locations</span>
+                            <span class="upload-hint">Point layer (.geojson) or ZIP bundle with photos</span>
                         </div>
-                        <input type="file" id="projects-file" accept=".geojson,.json" class="file-input">
+                        <input type="file" id="projects-file" accept=".geojson,.json,.zip" class="file-input">
                         <label for="projects-file" class="file-label">Choose File</label>
                         <div class="file-status" id="projects-status"></div>
                     </div>
@@ -125,6 +125,10 @@
                     
                     <div class="field-mapping-grid">
                         <div class="field-mapping-row">
+                            <label>ID:</label>
+                            <select id="map-id" class="field-select"></select>
+                        </div>
+                        <div class="field-mapping-row">
                             <label>Project Type:</label>
                             <select id="map-project-type" class="field-select"></select>
                         </div>
@@ -151,6 +155,14 @@
                         <div class="field-mapping-row">
                             <label>Watershed Name:</label>
                             <select id="map-watershed-name" class="field-select"></select>
+                        </div>
+                        <div class="field-mapping-row">
+                            <label>Photos:</label>
+                            <select id="map-photos" class="field-select"></select>
+                        </div>
+                        <div class="field-mapping-row">
+                            <label>Priority:</label>
+                            <select id="map-priority" class="field-select"></select>
                         </div>
                     </div>
                 </div>
@@ -186,6 +198,15 @@
                 <div id="popup" class="ol-popup">
                     <a href="#" id="popup-closer" class="ol-popup-closer"></a>
                     <div id="popup-content"></div>
+                </div>
+                
+                <!-- Photo Lightbox -->
+                <div id="photo-lightbox" class="photo-lightbox hidden">
+                    <div class="lightbox-overlay"></div>
+                    <div class="lightbox-content">
+                        <button class="lightbox-close" title="Close">&times;</button>
+                        <img id="lightbox-image" src="" alt="Full size photo">
+                    </div>
                 </div>
                 
                 <!-- Symbology Button -->
@@ -529,8 +550,33 @@
                     </div>
                     
                     <div class="filter-group">
+                        <label class="collapsible-label" data-target="filter-priority">
+                            <span>Priority:</span>
+                            <span class="collapse-icon collapsed">▼</span>
+                        </label>
+                        <div class="checkbox-group collapsed" id="filter-priority">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="filter-id-search">ID Search:</label>
+                        <input type="text" id="filter-id-search" class="filter-input" placeholder="Search by ID...">
+                    </div>
+                    
+                    <div class="filter-group">
                         <label for="filter-search">Landowner Search:</label>
                         <input type="text" id="filter-search" class="filter-input" placeholder="Search by landowner name...">
+                    </div>
+                    
+                    <div class="filter-group filter-toggle-group" id="filter-has-photos-group" style="display: none;">
+                        <label class="toggle-label">
+                            <span>Has Photos:</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="filter-has-photos">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </label>
                     </div>
                 </div>
             </div>
@@ -592,6 +638,7 @@
         <script src="resources/functions.js"></script>
         
         <!-- Builder Scripts -->
+        <script src="js/photo-store.js"></script>
         <script src="js/builder-core.js"></script>
         <script src="js/preview-mode.js"></script>
         <script src="js/export-dashboard.js"></script>
