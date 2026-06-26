@@ -91,13 +91,23 @@
                         <div class="file-status" id="municipalities-status">Will be fetched after watershed is uploaded</div>
                     </div>
                     
-                    <!-- Parcels - User-provided REST service links -->
+                    <!-- Parcels - Optional local upload or REST service links -->
                     <div class="file-upload-box parcel-upload-box" id="parcels-upload-box">
                         <div class="upload-icon"><i class="fas fa-vector-square"></i></div>
                         <div class="upload-label">
                             <strong>Parcel Data (Optional)</strong>
-                            <span class="upload-hint">Paste county parcel REST service links (up to 3)</span>
+                            <span class="upload-hint">Upload local parcel GeoJSON or paste county parcel REST service links (up to 3)</span>
                         </div>
+                        <div class="parcel-mode-toggle" id="parcel-mode-toggle" role="group" aria-label="Parcel input mode">
+                            <button type="button" class="parcel-mode-btn active" data-mode="local">Local Upload</button>
+                            <button type="button" class="parcel-mode-btn" data-mode="service">Service Fetch</button>
+                        </div>
+                        <div class="parcel-local-container" id="parcel-local-container">
+                            <input type="file" id="parcels-file" accept=".geojson,.json" class="file-input">
+                            <label for="parcels-file" class="file-label">Choose Parcel File</label>
+                            <span class="parcel-local-hint">Load parcels from a local GeoJSON or JSON file</span>
+                        </div>
+                        <div class="parcel-service-container" id="parcel-service-container" style="display: none;">
                         <div class="parcel-links-container">
                             <div class="parcel-link-row">
                                 <input type="text" id="parcel-link-1" class="parcel-link-input" placeholder="County parcel REST service URL (e.g., .../FeatureServer/0)">
@@ -115,7 +125,8 @@
                                 <i class="fas fa-download"></i> Fetch Parcels
                             </button>
                         </div>
-                        <div class="file-status" id="parcels-status">Enter at least one parcel service URL and upload watershed first</div>
+                        </div>
+                        <div class="file-status" id="parcels-status">Upload local parcels or enter at least one parcel service URL and upload watershed first</div>
                     </div>
                 </div>
                 

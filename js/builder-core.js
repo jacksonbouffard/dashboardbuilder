@@ -201,6 +201,30 @@ function initFileUploadHandlers() {
             updateParcelFetchButtonState();
         });
     });
+
+    // Optional parcels local file upload
+    const parcelsFileInput = document.getElementById('parcels-file');
+    if (parcelsFileInput) {
+        parcelsFileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            setParcelInputMode('local');
+
+            handleFileUpload(file, 'parcels', function(data) {
+                BuilderState.parcelData = data;
+
+                // Show parcel symbology controls for local uploads
+                const parcelSymbologyGroup = document.getElementById('parcels-symbology-group');
+                if (parcelSymbologyGroup) {
+                    parcelSymbologyGroup.style.display = 'block';
+                }
+
+                // Keep parcel fetch controls state in sync when local upload is used.
+                updateParcelFetchButtonState();
+            });
+        });
+    }
 }
 
 /**
@@ -392,6 +416,12 @@ function isValidGeoJSON(data, type) {
             // Should be polygons
             if (!['Polygon', 'MultiPolygon'].includes(geomType)) {
                 console.warn('Watershed boundary should be Polygon geometry');
+            }
+            break;
+        case 'parcels':
+            // Should typically be polygons
+            if (!['Polygon', 'MultiPolygon'].includes(geomType)) {
+                console.warn('Parcel data should typically be Polygon geometry');
             }
             break;
     }
@@ -1242,6 +1272,16 @@ async function fetchMunicipalitiesFromPennDOT(watershedData) {
  * Initialize parcel links input handlers
  */
 function initParcelLinksHandlers() {
+    // Mode toggle handlers
+    document.querySelectorAll('.parcel-mode-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const mode = this.getAttribute('data-mode');
+            if (mode) {
+                setParcelInputMode(mode);
+            }
+        });
+    });
+
     // Clear button handlers
     document.querySelectorAll('.parcel-link-clear').forEach(btn => {
         btn.addEventListener('click', function() {
@@ -1269,6 +1309,44 @@ function initParcelLinksHandlers() {
             fetchParcelsFromLinks();
         });
     }
+
+    // Ensure UI state is initialized
+    setParcelInputMode('local');
+}
+
+/**
+ * Get current parcel input mode
+ * @returns {'local'|'service'}
+ */
+function getParcelInputMode() {
+    const activeBtn = document.querySelector('.parcel-mode-btn.active');
+    const mode = activeBtn ? activeBtn.getAttribute('data-mode') : 'local';
+    return mode === 'service' ? 'service' : 'local';
+}
+
+/**
+ * Set parcel input mode and toggle relevant controls
+ * @param {'local'|'service'} mode
+ */
+function setParcelInputMode(mode) {
+    const normalizedMode = mode === 'service' ? 'service' : 'local';
+
+    document.querySelectorAll('.parcel-mode-btn').forEach(btn => {
+        const btnMode = btn.getAttribute('data-mode');
+        btn.classList.toggle('active', btnMode === normalizedMode);
+    });
+
+    const localContainer = document.getElementById('parcel-local-container');
+    const serviceContainer = document.getElementById('parcel-service-container');
+
+    if (localContainer) {
+        localContainer.style.display = normalizedMode === 'local' ? 'flex' : 'none';
+    }
+    if (serviceContainer) {
+        serviceContainer.style.display = normalizedMode === 'service' ? 'block' : 'none';
+    }
+
+    updateParcelFetchButtonState();
 }
 
 /**
@@ -1278,6 +1356,7 @@ function updateParcelFetchButtonState() {
     const fetchBtn = document.getElementById('fetch-parcels-btn');
     const statusEl = document.getElementById('parcels-status');
     if (!fetchBtn) return;
+    const mode = getParcelInputMode();
     
     // Check if at least one link is provided
     let hasLink = false;
@@ -1293,19 +1372,24 @@ function updateParcelFetchButtonState() {
     const hasWatershed = BuilderState.watershedData !== null;
     
     // Enable button only if both conditions are met
-    fetchBtn.disabled = !(hasLink && hasWatershed);
+    fetchBtn.disabled = !(mode === 'service' && hasLink && hasWatershed);
     
     // Update status text
     if (statusEl && !BuilderState.parcelData) {
-        if (!hasWatershed) {
-            statusEl.innerHTML = 'Upload watershed boundary first';
-            statusEl.className = 'file-status';
-        } else if (!hasLink) {
-            statusEl.innerHTML = 'Enter at least one parcel service URL';
+        if (mode === 'local') {
+            statusEl.innerHTML = 'Choose a local parcel GeoJSON or JSON file to load parcels';
             statusEl.className = 'file-status';
         } else {
-            statusEl.innerHTML = 'Ready to fetch parcels';
-            statusEl.className = 'file-status';
+            if (!hasWatershed) {
+                statusEl.innerHTML = 'Upload watershed boundary first';
+                statusEl.className = 'file-status';
+            } else if (!hasLink) {
+                statusEl.innerHTML = 'Enter at least one parcel service URL';
+                statusEl.className = 'file-status';
+            } else {
+                statusEl.innerHTML = 'Ready to fetch parcels';
+                statusEl.className = 'file-status';
+            }
         }
     }
 }
@@ -1385,10 +1469,429 @@ async function fetchParcelsFromLinks() {
     
     // Get bounding box from watershed
     const bbox = getBoundingBox(BuilderState.watershedData);
+
+    const buildEnvelopeQueryGeometry = () => ({
+        geometryType: 'esriGeometryEnvelope',
+        geometry: {
+            xmin: bbox[0],
+            ymin: bbox[1],
+            xmax: bbox[2],
+            ymax: bbox[3],
+            spatialReference: { wkid: 4326 }
+        }
+    });
+
+    const buildEsriQueryGeometry = () => {
+        if (!watershedUnion || !watershedUnion.geometry) {
+            return buildEnvelopeQueryGeometry();
+        }
+
+        const geom = watershedUnion.geometry;
+        if (geom.type === 'Polygon' && Array.isArray(geom.coordinates)) {
+            return {
+                geometryType: 'esriGeometryPolygon',
+                geometry: {
+                    rings: geom.coordinates,
+                    spatialReference: { wkid: 4326 }
+                }
+            };
+        }
+
+        if (geom.type === 'MultiPolygon' && Array.isArray(geom.coordinates)) {
+            const rings = [];
+            geom.coordinates.forEach(poly => {
+                if (Array.isArray(poly)) {
+                    poly.forEach(ring => {
+                        if (Array.isArray(ring)) rings.push(ring);
+                    });
+                }
+            });
+            if (rings.length > 0) {
+                return {
+                    geometryType: 'esriGeometryPolygon',
+                    geometry: {
+                        rings,
+                        spatialReference: { wkid: 4326 }
+                    }
+                };
+            }
+        }
+
+        return buildEnvelopeQueryGeometry();
+    };
+
+    const signedRingArea = (ring) => {
+        if (!Array.isArray(ring) || ring.length < 4) {
+            return 0;
+        }
+        let area = 0;
+        for (let i = 0; i < ring.length - 1; i++) {
+            const p1 = ring[i];
+            const p2 = ring[i + 1];
+            area += (p1[0] * p2[1]) - (p2[0] * p1[1]);
+        }
+        return area / 2;
+    };
+
+    const pointInRing = (point, ring) => {
+        if (!Array.isArray(point) || !Array.isArray(ring) || ring.length < 4) {
+            return false;
+        }
+
+        let inside = false;
+        const x = point[0];
+        const y = point[1];
+
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+            const xi = ring[i][0], yi = ring[i][1];
+            const xj = ring[j][0], yj = ring[j][1];
+
+            const intersect = ((yi > y) !== (yj > y)) &&
+                (x < (xj - xi) * (y - yi) / ((yj - yi) || Number.EPSILON) + xi);
+            if (intersect) inside = !inside;
+        }
+
+        return inside;
+    };
+
+    const esriRingsToGeoJSON = (rings) => {
+        if (!Array.isArray(rings) || rings.length === 0) {
+            return null;
+        }
+
+        const outers = [];
+        const holes = [];
+
+        for (const ring of rings) {
+            if (!Array.isArray(ring) || ring.length < 4) continue;
+            const area = signedRingArea(ring);
+            // ArcGIS convention: outer rings are clockwise (negative area), holes are counter-clockwise.
+            if (area < 0) {
+                outers.push(ring);
+            } else {
+                holes.push(ring);
+            }
+        }
+
+        // Fallback when orientation is inconsistent.
+        if (outers.length === 0) {
+            if (rings.length === 1) {
+                return {
+                    type: 'Polygon',
+                    coordinates: [rings[0]]
+                };
+            }
+            return {
+                type: 'MultiPolygon',
+                coordinates: rings.map(r => [r])
+            };
+        }
+
+        const polygons = outers.map(outer => [outer]);
+
+        for (const hole of holes) {
+            const testPoint = hole[0];
+            let assigned = false;
+
+            for (let i = 0; i < outers.length; i++) {
+                if (pointInRing(testPoint, outers[i])) {
+                    polygons[i].push(hole);
+                    assigned = true;
+                    break;
+                }
+            }
+
+            if (!assigned && polygons.length > 0) {
+                // Keep unassigned rings as holes on first polygon to avoid dropping geometry.
+                polygons[0].push(hole);
+            }
+        }
+
+        if (polygons.length === 1) {
+            return {
+                type: 'Polygon',
+                coordinates: polygons[0]
+            };
+        }
+
+        return {
+            type: 'MultiPolygon',
+            coordinates: polygons
+        };
+    };
+
+    const wkidToProj = (wkid) => {
+        if (!wkid) return null;
+        if (wkid === 102100) return 'EPSG:3857';
+        return `EPSG:${wkid}`;
+    };
+
+    const transformCoordinates = (coords, fromProj, toProj) => {
+        if (!Array.isArray(coords)) return coords;
+        if (typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+            try {
+                return proj4(fromProj, toProj, coords);
+            } catch (e) {
+                return coords;
+            }
+        }
+        return coords.map(c => transformCoordinates(c, fromProj, toProj));
+    };
+
+    // Convert ArcGIS geometry JSON to GeoJSON geometry
+    const esriGeometryToGeoJSON = (geometry, defaultSpatialRef) => {
+        if (!geometry || typeof geometry !== 'object') {
+            return null;
+        }
+
+        const geomSpatialRef = geometry.spatialReference || defaultSpatialRef || {};
+        const wkid = geomSpatialRef.wkid || geomSpatialRef.latestWkid;
+        const fromProj = wkidToProj(wkid);
+        const shouldProject = fromProj && fromProj !== 'EPSG:4326' && typeof proj4 !== 'undefined';
+
+        const maybeProject = (coords) => shouldProject
+            ? transformCoordinates(coords, fromProj, 'EPSG:4326')
+            : coords;
+
+        if (typeof geometry.x === 'number' && typeof geometry.y === 'number') {
+            return {
+                type: 'Point',
+                coordinates: maybeProject([geometry.x, geometry.y])
+            };
+        }
+
+        if (Array.isArray(geometry.points)) {
+            const points = maybeProject(geometry.points);
+            if (geometry.points.length === 1) {
+                return {
+                    type: 'Point',
+                    coordinates: points[0]
+                };
+            }
+            return {
+                type: 'MultiPoint',
+                coordinates: points
+            };
+        }
+
+        if (Array.isArray(geometry.paths)) {
+            const paths = maybeProject(geometry.paths);
+            if (geometry.paths.length === 1) {
+                return {
+                    type: 'LineString',
+                    coordinates: paths[0]
+                };
+            }
+            return {
+                type: 'MultiLineString',
+                coordinates: paths
+            };
+        }
+
+        if (Array.isArray(geometry.rings)) {
+            const rings = maybeProject(geometry.rings);
+            return esriRingsToGeoJSON(rings);
+        }
+
+        return null;
+    };
+
+    // Parse query response regardless of ArcGIS format and return GeoJSON features
+    const parseArcGISQueryFeatures = (payload) => {
+        if (!payload || typeof payload !== 'object') {
+            throw new Error('Empty response from parcel service');
+        }
+
+        if (payload.error) {
+            const details = Array.isArray(payload.error.details) ? payload.error.details.filter(Boolean).join(' | ') : '';
+            const message = payload.error.message || 'Unknown ArcGIS service error';
+            throw new Error(details ? `${message} (${details})` : message);
+        }
+
+        // Native GeoJSON response
+        if (payload.type === 'FeatureCollection' && Array.isArray(payload.features)) {
+            return payload.features;
+        }
+
+        if (!Array.isArray(payload.features)) {
+            throw new Error('Unsupported response format from parcel service');
+        }
+
+        // ArcGIS JSON response - convert to GeoJSON features
+        const defaultSpatialRef = payload.spatialReference || null;
+
+        return payload.features
+            .map(feature => {
+                if (feature && feature.type === 'Feature' && feature.geometry) {
+                    return feature;
+                }
+
+                const geometry = esriGeometryToGeoJSON(feature ? feature.geometry : null, defaultSpatialRef);
+                if (!geometry) {
+                    return null;
+                }
+
+                return {
+                    type: 'Feature',
+                    geometry,
+                    properties: (feature && feature.attributes) || {}
+                };
+            })
+            .filter(Boolean);
+    };
+
+    const executeArcGISRequest = async (url, params) => {
+        let response;
+        let usedMethod = 'POST';
+        try {
+            // Prefer POST so polygon AOI queries don't fail from URL length limits.
+            response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+                },
+                body: params.toString()
+            });
+        } catch (postNetworkError) {
+            // Fallback to GET for services that don't accept POST from browser clients.
+            usedMethod = 'GET';
+            response = await fetch(`${url}?${params.toString()}`);
+        }
+
+        // Some ArcGIS endpoints return 400 on POST but succeed on GET.
+        if (!response.ok && usedMethod === 'POST') {
+            try {
+                const getResponse = await fetch(`${url}?${params.toString()}`);
+                if (getResponse.ok) {
+                    response = getResponse;
+                    usedMethod = 'GET';
+                }
+            } catch (getFallbackError) {
+                // Keep original POST failure for error parsing below.
+            }
+        }
+
+        if (!response.ok) {
+            let details = '';
+            try {
+                const contentType = response.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    const errPayload = await response.json();
+                    if (errPayload && errPayload.error) {
+                        const errMsg = errPayload.error.message || 'ArcGIS service error';
+                        const errDetails = Array.isArray(errPayload.error.details)
+                            ? errPayload.error.details.filter(Boolean).join(' | ')
+                            : '';
+                        details = errDetails ? `${errMsg} (${errDetails})` : errMsg;
+                    }
+                } else {
+                    const txt = await response.text();
+                    if (txt) {
+                        details = txt.slice(0, 300);
+                    }
+                }
+            } catch (e) {
+                // Ignore parse errors and fall back to status code.
+            }
+
+            const statusMsg = `HTTP error: ${response.status}`;
+            throw new Error(details ? `${statusMsg} - ${details}` : statusMsg);
+        }
+
+        return response.json();
+    };
+
+    const queryFeaturesWithFormats = async (url, paramsBase, preferredFormat = null) => {
+        const formatsToTry = preferredFormat ? [preferredFormat] : ['geojson', 'json'];
+        let pageError = null;
+
+        for (const format of formatsToTry) {
+            const params = new URLSearchParams({
+                ...paramsBase,
+                f: format
+            });
+
+            const payload = await executeArcGISRequest(url, params);
+            try {
+                const features = parseArcGISQueryFeatures(payload);
+                return { features, format };
+            } catch (parseError) {
+                pageError = parseError;
+            }
+        }
+
+        throw pageError || new Error('Parcel service returned unsupported format');
+    };
+
+    const fetchByObjectIdChunks = async (url, baseParams, linkIndex) => {
+        const idParams = {
+            where: baseParams.where,
+            geometry: baseParams.geometry,
+            geometryType: baseParams.geometryType,
+            inSR: baseParams.inSR,
+            spatialRel: baseParams.spatialRel,
+            returnIdsOnly: 'true',
+            f: 'json'
+        };
+
+        const idsPayload = await executeArcGISRequest(url, new URLSearchParams(idParams));
+        if (idsPayload && idsPayload.error) {
+            const details = Array.isArray(idsPayload.error.details) ? idsPayload.error.details.filter(Boolean).join(' | ') : '';
+            const message = idsPayload.error.message || 'Unknown ArcGIS service error';
+            throw new Error(details ? `${message} (${details})` : message);
+        }
+
+        const objectIds = Array.isArray(idsPayload && idsPayload.objectIds) ? idsPayload.objectIds : [];
+        if (objectIds.length === 0) {
+            return [];
+        }
+
+        const CHUNK_SIZE = 200;
+        const MIN_CHUNK_SIZE = 25;
+        const collected = [];
+
+        const fetchIdChunk = async (chunkIds) => {
+            const chunkParams = {
+                where: '1=1',
+                objectIds: chunkIds.join(','),
+                returnGeometry: 'true',
+                outFields: '*',
+                outSR: '4326'
+            };
+
+            try {
+                const { features } = await queryFeaturesWithFormats(url, chunkParams, 'json');
+                return features;
+            } catch (e) {
+                const msg = e && e.message ? e.message : '';
+                if (/HTTP error: 400/i.test(msg) && chunkIds.length > MIN_CHUNK_SIZE) {
+                    const mid = Math.ceil(chunkIds.length / 2);
+                    const left = await fetchIdChunk(chunkIds.slice(0, mid));
+                    const right = await fetchIdChunk(chunkIds.slice(mid));
+                    return left.concat(right);
+                }
+                throw e;
+            }
+        };
+
+        for (let i = 0; i < objectIds.length; i += CHUNK_SIZE) {
+            const chunk = objectIds.slice(i, i + CHUNK_SIZE);
+            const features = await fetchIdChunk(chunk);
+            collected.push(...features);
+
+            if (statusEl) {
+                statusEl.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Source ${linkIndex + 1}: ${collected.length}/${objectIds.length} parcels fetched...`;
+            }
+        }
+
+        return collected;
+    };
     
     try {
         // Fetch from all provided links
         let allParcels = [];
+        const sourceErrors = [];
+        const MAX_TOTAL_PARCELS = 100000;
         
         for (let linkIndex = 0; linkIndex < links.length; linkIndex++) {
             const link = links[linkIndex];
@@ -1406,52 +1909,106 @@ async function fetchParcelsFromLinks() {
             let offset = 0;
             let hasMore = true;
             let sourceFeatures = [];
+            let selectedFormat = null;
+            let usePagination = true;
+            const polygonQueryGeometry = buildEsriQueryGeometry();
+            const envelopeQueryGeometry = buildEnvelopeQueryGeometry();
+            let queryGeometry = polygonQueryGeometry;
+            let geometryFallbackUsed = false;
             
             while (hasMore) {
-                const params = new URLSearchParams({
+                const paramsBase = {
                     where: '1=1',
-                    geometry: JSON.stringify({
-                        xmin: bbox[0],
-                        ymin: bbox[1],
-                        xmax: bbox[2],
-                        ymax: bbox[3],
-                        spatialReference: { wkid: 4326 }
-                    }),
-                    geometryType: 'esriGeometryEnvelope',
+                    geometry: JSON.stringify(queryGeometry.geometry),
+                    geometryType: queryGeometry.geometryType,
                     inSR: '4326',
                     spatialRel: 'esriSpatialRelIntersects',
+                    returnGeometry: 'true',
                     outFields: '*',
-                    outSR: '4326',
-                    resultOffset: offset,
-                    f: 'geojson'
-                });
+                    outSR: '4326'
+                };
+                if (usePagination) {
+                    paramsBase.resultRecordCount = 1000;
+                    paramsBase.resultOffset = offset;
+                }
+                let pageFeatures = null;
                 
                 try {
-                    const response = await fetch(`${baseUrl}?${params.toString()}`);
-                    
-                    if (!response.ok) {
-                        throw new Error(`HTTP error: ${response.status}`);
+                    const queryResult = await queryFeaturesWithFormats(baseUrl, paramsBase, selectedFormat);
+                    pageFeatures = queryResult.features;
+                    selectedFormat = queryResult.format;
+
+                    if (!pageFeatures) {
+                        throw new Error('Parcel service returned unsupported format');
                     }
-                    
-                    const geojson = await response.json();
-                    
-                    if (!geojson.features || geojson.features.length === 0) {
+
+                    if (pageFeatures.length === 0) {
                         hasMore = false;
                     } else {
-                        sourceFeatures = sourceFeatures.concat(geojson.features);
-                        offset += geojson.features.length;
+                        sourceFeatures = sourceFeatures.concat(pageFeatures);
+                        offset += pageFeatures.length;
                         
                         if (statusEl) {
                             statusEl.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Source ${linkIndex + 1}: ${sourceFeatures.length} parcels fetched...`;
                         }
                         
                         // Check if we got fewer features than typical page size
-                        if (geojson.features.length < 1000) {
+                        if (!usePagination || pageFeatures.length < 1000) {
+                            hasMore = false;
+                        }
+
+                        // Hard safety guard to avoid runaway loops with repeated pages.
+                        if (sourceFeatures.length >= MAX_TOTAL_PARCELS) {
+                            console.warn(`Source ${linkIndex + 1} hit safety cap (${MAX_TOTAL_PARCELS} features). Stopping fetch for this source.`);
                             hasMore = false;
                         }
                     }
                 } catch (fetchError) {
                     console.error(`Error fetching from source ${linkIndex + 1}:`, fetchError);
+                    let errorMessage = fetchError && fetchError.message ? fetchError.message : 'Unknown error while querying parcel service';
+
+                    if (/networkerror|failed to fetch|load failed/i.test(errorMessage)) {
+                        errorMessage = 'Network request blocked or unavailable (possible CORS, mixed-content HTTP/HTTPS mismatch, or service outage)';
+                    }
+
+                    // Some services reject resultOffset/resultRecordCount; fetch all matching IDs then chunk by objectIds.
+                    if (usePagination && /pagination\s+is\s+not\s+supported/i.test(errorMessage)) {
+                        console.warn(`Source ${linkIndex + 1} does not support pagination. Retrying with objectId chunking.`);
+                        try {
+                            const noPageParams = {
+                                ...paramsBase
+                            };
+                            delete noPageParams.resultRecordCount;
+                            delete noPageParams.resultOffset;
+                            sourceFeatures = await fetchByObjectIdChunks(baseUrl, noPageParams, linkIndex);
+                            offset = sourceFeatures.length;
+                            usePagination = false;
+                            hasMore = false;
+                            selectedFormat = 'json';
+                        } catch (chunkError) {
+                            const chunkMessage = chunkError && chunkError.message ? chunkError.message : 'ObjectID chunk fallback failed';
+                            sourceErrors.push(`Source ${linkIndex + 1}: ${chunkMessage}`);
+                            hasMore = false;
+                        }
+                        continue;
+                    }
+
+                    // Some services reject polygon geometry payloads. Retry this source with envelope geometry.
+                    if (!geometryFallbackUsed &&
+                        queryGeometry.geometryType === 'esriGeometryPolygon' &&
+                        /HTTP error:\s*400/i.test(errorMessage)) {
+                        console.warn(`Source ${linkIndex + 1} rejected polygon query geometry. Retrying with envelope geometry.`);
+                        geometryFallbackUsed = true;
+                        queryGeometry = envelopeQueryGeometry;
+                        usePagination = true;
+                        offset = 0;
+                        hasMore = true;
+                        sourceFeatures = [];
+                        selectedFormat = null;
+                        continue;
+                    }
+
+                    sourceErrors.push(`Source ${linkIndex + 1}: ${errorMessage}`);
                     hasMore = false;
                 }
             }
@@ -1470,7 +2027,12 @@ async function fetchParcelsFromLinks() {
             }
             if (statusEl) {
                 statusEl.className = 'file-status error';
-                statusEl.innerHTML = '<i class="fas fa-times"></i> No parcels found in watershed area';
+                if (sourceErrors.length > 0) {
+                    const summary = sourceErrors[0];
+                    statusEl.innerHTML = `<i class="fas fa-times"></i> Parcel query failed. ${summary}`;
+                } else {
+                    statusEl.innerHTML = '<i class="fas fa-times"></i> No parcels found in watershed area';
+                }
             }
             return;
         }
